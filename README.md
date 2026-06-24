@@ -58,20 +58,25 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goals 01–04 are implemented: the `siro` package (`src/siro/`) with explicit Pydantic
+Goals 01–05 are implemented: the `siro` package (`src/siro/`) with explicit Pydantic
 schemas, an append-only JSONL archive + audit ledger, plane-isolation safety
 primitives, the objective scoring function, and a CLI surface (Goal 01); the per-task
 code-improver loop — `controller` + isolated `sandbox` execution (Goal 02); durable
-research `memory` distilled into the proposer prompt (Goal 03); and the promotion
+research `memory` distilled into the proposer prompt (Goal 03); the promotion
 `gates` — code-integrity, safety, reproducibility, and hidden-test gates that bound
-what the loop may promote (Goal 04). The candidate-generation model layer (the
-provider abstraction) is generalized in Goal 07. The canonical interface is
-`uv run siro` (mise tasks are thin wrappers):
+what the loop may promote (Goal 04); and the bounded meta-research outer loop — `meta`,
+which reflects on the archive, proposes a reversible process change (prompts/retrieval),
+A/B-tests it against the current process on a fixed benchmark, and recommends
+promote/reject, with a separate `runs/meta_changes.jsonl` archive, a generated rollback
+plan, and durable application held behind a human-approval flag (Goal 05). The
+candidate-generation model layer (the provider abstraction) is generalized in Goal 07.
+The canonical interface is `uv run siro` (mise tasks are thin wrappers):
 
 ```zsh
 uv run siro --help
-uv run siro summarize-runs runs/attempts.jsonl     # reflect on the archive
-uv run siro run-task tasks/code_improver/task_001  # per-task loop (Goal 02)
+uv run siro summarize-runs runs/attempts.jsonl        # reflect on the archive
+uv run siro run-task tasks/code_improver/task_001     # per-task inner loop (Goal 02)
+uv run siro propose-meta-change runs/attempts.jsonl   # meta-research outer loop (Goal 05)
 ```
 
 ## Suggested use
