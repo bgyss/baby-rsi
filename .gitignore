@@ -1,0 +1,22 @@
+# Nix / direnv
+.direnv/
+result
+result-*
+
+# mise local overrides
+mise.local.toml
+.mise.local.toml
+
+# uv / Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Run outputs (artifacts are regenerated; keep them out of version control)
+runs/artifacts/
+runs/*.sqlite
+
+# macOS
+.DS_Store

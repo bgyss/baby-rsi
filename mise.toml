@@ -1,0 +1,43 @@
+# mise — single source of truth for language tool versions + task runner.
+# Nix provides `mise` itself; mise provides python/uv; uv manages Python deps.
+# Run `mise install` to materialize the toolchain, then `mise run <task>`.
+
+[tools]
+python = "3.11"
+uv = "latest"
+
+[settings]
+# Let uv create and manage the project virtualenv (.venv) automatically.
+python.uv_venv_auto = true
+
+[env]
+# Keep all model/sandbox traffic local by default; the loop must not reach the network.
+SIRO_ALLOW_NETWORK = "false"
+
+[tasks.sync]
+description = "Resolve and install Python dependencies into .venv"
+run = "uv sync"
+
+[tasks.test]
+description = "Run the full test suite"
+run = "uv run pytest"
+
+[tasks.lint]
+description = "Static checks"
+run = "uv run ruff check ."
+
+[tasks.fmt]
+description = "Format code"
+run = "uv run ruff format ."
+
+[tasks.run-task]
+description = "Run a code-improver experiment, e.g. mise run run-task -- tasks/code_improver/task_001"
+run = "uv run siro run-task"
+
+[tasks.summarize]
+description = "Summarize archived attempts"
+run = "uv run siro summarize-runs runs/attempts.jsonl"
+
+[tasks.serve-model]
+description = "Start the local Ollama model server"
+run = "ollama serve"
