@@ -102,6 +102,10 @@ Commit work as you go — **do not wait to be asked to commit** (this overrides 
 - Use the project's commit convention (co-author / session trailers) on every `jj describe` message.
 - For a *durably enforced* auto-commit (a Stop hook that runs `jj describe`/`jj new` automatically rather than relying on this instruction), configure it in `.claude/settings.json` via the `update-config` skill.
 
+## Keep the README current
+
+`README.md` is the front door to this repo — keep it fresh and in sync with the code. Whenever a change alters what's implemented or how the system is used (a goal lands, the `siro` package gains a module/command, the CLI surface or tier behavior shifts), update `README.md` in the **same** change. Its "Implementation status" section and example commands must reflect reality, and its document/goal map must match what's under `docs/`. A README that lags the code is a contract deviation, the same as a goal prompt that drops its `## Self-improvement` section — treat updating it as part of finishing the work, not a follow-up.
+
 ## Control plane vs execution plane (load-bearing once frontier APIs are used)
 
 - **Control plane** — orchestrator + agents. MAY reach the network, but only allow-listed provider endpoints (`api.anthropic.com`, `api.openai.com`, local llama.cpp/LlamaBarn socket `127.0.0.1:2276`). Holds API keys. Never runs candidate code.
