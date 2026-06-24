@@ -2,6 +2,7 @@
 
 from siro.archive import JSONLArchive, ModelCallLedger
 from siro.controller import Controller, load_task, select_best
+from siro.memory import ResearchMemory
 from siro.model_client import ScriptedModelClient
 from siro.schemas import Attempt, AttemptStatus, Candidate, EvaluationResult
 
@@ -46,7 +47,9 @@ def test_run_task_five_generations(tmp_path):
     archive = JSONLArchive(tmp_path / "attempts.jsonl")
     ledger = ModelCallLedger(tmp_path / "model_calls.jsonl")
     model = ScriptedModelClient([f"```python\n{GOOD_CODE}```"])
-    controller = Controller(archive=archive, ledger=ledger)
+    controller = Controller(
+        archive=archive, ledger=ledger, memory=ResearchMemory(tmp_path / "memory.jsonl")
+    )
 
     result = controller.run_task(TASK_DIR, model=model, generations=5)
 
@@ -66,7 +69,9 @@ def test_best_candidate_selected_by_score(tmp_path):
     ledger = ModelCallLedger(tmp_path / "model_calls.jsonl")
     # First proposal is broken, second is correct: the loop must end on the good one.
     model = ScriptedModelClient([f"```python\n{BAD_CODE}```", f"```python\n{GOOD_CODE}```"])
-    controller = Controller(archive=archive, ledger=ledger)
+    controller = Controller(
+        archive=archive, ledger=ledger, memory=ResearchMemory(tmp_path / "memory.jsonl")
+    )
 
     result = controller.run_task(TASK_DIR, model=model, generations=2)
 
@@ -80,7 +85,9 @@ def test_negative_results_are_archived(tmp_path):
     archive = JSONLArchive(tmp_path / "attempts.jsonl")
     ledger = ModelCallLedger(tmp_path / "model_calls.jsonl")
     model = ScriptedModelClient([f"```python\n{BAD_CODE}```"])
-    controller = Controller(archive=archive, ledger=ledger)
+    controller = Controller(
+        archive=archive, ledger=ledger, memory=ResearchMemory(tmp_path / "memory.jsonl")
+    )
 
     result = controller.run_task(TASK_DIR, model=model, generations=3)
 

@@ -17,6 +17,7 @@ __pycache__/
 # Run outputs (artifacts are regenerated; keep them out of version control)
 runs/artifacts/
 runs/*.sqlite
+runs/*.jsonl
 
 # macOS
 .DS_Store

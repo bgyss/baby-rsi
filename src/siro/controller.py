@@ -21,6 +21,7 @@ from pathlib import Path
 
 from .archive import JSONLArchive, ModelCallLedger
 from .evaluator import evaluate
+from .memory import ResearchMemory
 from .model_client import ModelClient, extract_code
 from .prompts import load_prompt
 from .sandbox import Sandbox
@@ -107,13 +108,15 @@ class Controller:
         archive: JSONLArchive | None = None,
         sandbox: Sandbox | None = None,
         ledger: ModelCallLedger | None = None,
+        memory: ResearchMemory | None = None,
         prompts_dir: Path | None = None,
     ) -> None:
-        # NB: use `is None`, not `or` — JSONLArchive defines __len__, so an empty
-        # archive is falsy and an `or` default would silently discard a real one.
+        # NB: use `is None`, not `or` — JSONLArchive/ResearchMemory define __len__, so
+        # an empty store is falsy and an `or` default would silently discard a real one.
         self.archive = JSONLArchive() if archive is None else archive
         self.sandbox = Sandbox() if sandbox is None else sandbox
         self.ledger = ModelCallLedger() if ledger is None else ledger
+        self.memory = ResearchMemory() if memory is None else memory
         self.prompts_dir = prompts_dir
 
     def best_so_far(self) -> Attempt | None:
@@ -139,12 +142,21 @@ class Controller:
             reason=reason,
         )
 
+    def _persist(self, attempt: Attempt) -> None:
+        """Archive an attempt and record it to research memory (controller-only writes)."""
+        self.archive.append(attempt)
+        self.memory.record(attempt)
+
     def _build_prompt(self, task: LoadedTask, current_code: str) -> str:
         template = load_prompt("code_improver", self.prompts_dir)
+        # Memory lessons are *data*, not instructions: the prompt frames them as
+        # untrusted reference and the task rules always take precedence.
+        lessons = self.memory.lessons_block(task.task_id)
         return (
             template.replace("{task_prompt}", task.prompt)
             .replace("{module_name}", task.module_name)
             .replace("{current_code}", current_code.strip())
+            .replace("{memory_lessons}", lessons or "- (no prior lessons yet)")
         )
 
     def _log_model_call(
@@ -181,7 +193,7 @@ class Controller:
         baseline.status = (
             AttemptStatus.PROMOTED if baseline.evaluation.reproducible else AttemptStatus.ERROR
         )
-        self.archive.append(baseline)
+        self._persist(baseline)
         result.attempts.append(baseline)
         best = baseline
 
@@ -208,7 +220,7 @@ class Controller:
             else:
                 attempt.status = AttemptStatus.REJECTED
 
-            self.archive.append(attempt)
+            self._persist(attempt)
             result.attempts.append(attempt)
 
         result.best = best

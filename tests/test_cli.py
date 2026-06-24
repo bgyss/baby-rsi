@@ -44,6 +44,26 @@ def test_summarize_runs_reads_archive(tmp_path, capsys):
     assert "Best score: 4000.0" in out
 
 
+def test_summarize_runs_shows_top_failure_modes(tmp_path, capsys):
+    path = tmp_path / "attempts.jsonl"
+    archive = JSONLArchive(path)
+    for i in range(2):
+        archive.append(
+            Attempt(
+                attempt_id=f"f{i}",
+                task_id="t",
+                candidate=Candidate(candidate_id=f"f{i}", task_id="t", code="pass"),
+                evaluation=EvaluationResult(passed_tests=0, failed_tests=3, score=-300.0),
+                status=AttemptStatus.REJECTED,
+                reason=f"{i + 1} test(s) failing",
+            )
+        )
+    assert main(["summarize-runs", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert "Top failure modes:" in out
+    assert "test_failures: 2" in out  # numbers clustered into one signature
+
+
 def test_summarize_runs_empty(tmp_path, capsys):
     assert main(["summarize-runs", str(tmp_path / "none.jsonl")]) == 0
     assert "No attempts" in capsys.readouterr().out

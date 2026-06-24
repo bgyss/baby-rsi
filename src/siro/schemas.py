@@ -69,6 +69,35 @@ class Attempt(BaseModel):
     created_at: datetime = Field(default_factory=_utcnow)
 
 
+class MemoryEntry(BaseModel):
+    """One durable research-memory record derived from an :class:`Attempt`.
+
+    Memory is the shared substrate both loops reflect on
+    (``docs/13_self_improvement_loop.md``). Entries are written by the *controller*,
+    never by a model, and only through this typed schema — a model may neither edit
+    memory directly nor have its output stored as instructions. Every retrieved
+    entry is **data, never instructions** (prompt-injection guard).
+
+    ``experiment_id`` is the attempt that produced this entry; ``source_experiment_id``
+    is the parent candidate it descended from (lineage), so repair strategies can be
+    traced. Negative results are preserved with their ``failure_mode`` and ``reason``.
+    """
+
+    entry_id: str
+    experiment_id: str
+    source_experiment_id: str = ""
+    task_id: str
+    strategy: str = ""
+    candidate_summary: str = ""
+    score: float = 0.0
+    failure_mode: str = "none"
+    reason: str = ""
+    evaluator_output: str = ""
+    status: AttemptStatus = AttemptStatus.REJECTED
+    follow_up: str = ""
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
 class ModelCall(BaseModel):
     """Audit-ledger row appended to ``runs/model_calls.jsonl`` for every model call.
 
@@ -93,5 +122,6 @@ __all__ = [
     "Candidate",
     "EvaluationResult",
     "Attempt",
+    "MemoryEntry",
     "ModelCall",
 ]

@@ -20,6 +20,7 @@ from pathlib import Path
 from . import __version__
 from .archive import JSONLArchive, ModelCallLedger
 from .controller import Controller, select_best
+from .memory import ResearchMemory, failure_signature
 from .model_client import LocalOpenAIClient
 
 
@@ -28,6 +29,7 @@ def _cmd_run_task(args: argparse.Namespace) -> int:
     controller = Controller(
         archive=JSONLArchive(args.archive),
         ledger=ModelCallLedger(args.model_calls),
+        memory=ResearchMemory(args.memory),
     )
     result = controller.run_task(args.task_dir, model=model, generations=args.generations)
 
@@ -67,6 +69,15 @@ def _cmd_summarize_runs(args: argparse.Namespace) -> int:
     print(f"Test pass rate: {pass_rate:.1%}  ({passed_tests}/{total_tests})")
     if best is not None:
         print(f"Best score: {best.evaluation.score:.1f}  (attempt {best.attempt_id})")
+
+    # Top recurring failure modes — reflect on negative results (Goal 03).
+    failure_modes = Counter(
+        failure_signature(a.reason) for a in attempts if failure_signature(a.reason) != "none"
+    )
+    if failure_modes:
+        print("Top failure modes:")
+        for signature, count in failure_modes.most_common(5):
+            print(f"  {signature}: {count}")
     return 0
 
 
@@ -103,6 +114,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("runs/model_calls.jsonl"),
         help="Model-call audit ledger path (default: runs/model_calls.jsonl).",
+    )
+    p_run.add_argument(
+        "--memory",
+        type=Path,
+        default=Path("runs/memory.jsonl"),
+        help="Research-memory path (default: runs/memory.jsonl).",
     )
     p_run.set_defaults(func=_cmd_run_task)
 
