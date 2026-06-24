@@ -1,0 +1,56 @@
+# Tier 1 — frontier-LLM prototype of the full research organization.
+# The execution plane stays offline at every tier; only the control plane may
+# reach allow-listed model-provider endpoints. See docs/07_model_providers_and_tiers.md.
+tier: 1
+
+providers:
+  local:
+    backend: llamacpp                       # OpenAI-compatible llama.cpp / LlamaBarn server
+    base_url: http://127.0.0.1:2276/v1
+    name: unsloth/Qwen3.6-27B-GGUF:Q8_0
+    timeout_seconds: 120
+  anthropic:
+    backend: anthropic
+    name: claude-opus-4-8                    # frontier reasoning / implementation
+    api_key_env: ANTHROPIC_API_KEY
+    timeout_seconds: 120
+  openai:
+    backend: openai
+    name: gpt-5.4
+    api_key_env: OPENAI_API_KEY
+    timeout_seconds: 120
+
+agent_models:                                # capability binding per role
+  hypothesis: anthropic
+  literature: anthropic
+  implementation: anthropic
+  evaluation: local                          # objective; model only summarizes
+  safety: openai                             # cross-model reviewer, distinct from implementer
+  interpretation: anthropic
+  meta_research: anthropic
+
+sandbox:
+  timeout_seconds: 10
+  network: disabled                          # execution plane is always offline
+  max_attempts_per_task: 20
+
+evaluation:
+  primary_metric: pytest_pass_rate
+  require_reproducibility: true
+
+budget:
+  max_usd_per_run: 5.00
+  max_usd_per_day: 50.00
+  max_tokens_per_call: 8000
+
+safety:
+  allow_network: true                        # control-plane egress (allowlisted only)
+  allow_package_install: false
+  allow_evaluator_edits: false
+
+network:
+  egress: allowlist
+  allowed_endpoints:
+    - api.anthropic.com
+    - api.openai.com
+    - 127.0.0.1:2276                         # local llama.cpp / LlamaBarn server

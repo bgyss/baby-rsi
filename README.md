@@ -56,6 +56,20 @@ mise run test      # uv run pytest
 mise tasks         # list available tasks
 ```
 
+## Implementation status
+
+Goal 01 (project scaffold) is implemented: the `siro` package (`src/siro/`) with
+explicit Pydantic schemas, an append-only JSONL archive + audit ledger, plane-isolation
+safety primitives, the objective scoring function, and a CLI surface. The experiment
+loop itself (`controller`/`sandbox` execution) lands in Goal 02. The canonical interface
+is `uv run siro` (mise tasks are thin wrappers):
+
+```zsh
+uv run siro --help
+uv run siro summarize-runs runs/attempts.jsonl     # reflect on the archive
+uv run siro run-task tasks/code_improver/task_001  # per-task loop (Goal 02)
+```
+
 ## Suggested use
 
 1. Read `docs/00_principles.md` and `docs/01_system_architecture.md` for the design.

@@ -13,6 +13,9 @@ python.uv_venv_auto = true
 [env]
 # Keep all model/sandbox traffic local by default; the loop must not reach the network.
 SIRO_ALLOW_NETWORK = "false"
+# mise is the single source of truth for the Python version; make uv target the
+# pinned interpreter instead of discovering a different one.
+UV_PYTHON = "3.11"
 
 [tasks.sync]
 description = "Resolve and install Python dependencies into .venv"

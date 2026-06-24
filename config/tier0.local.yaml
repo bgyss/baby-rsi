@@ -1,0 +1,27 @@
+# Tier 0 — fully local / offline. The default config.
+# Selecting or lowering a tier is config-only, never a code change.
+tier: 0
+
+providers:
+  local:
+    backend: llamacpp                       # OpenAI-compatible llama.cpp / LlamaBarn server
+    base_url: http://127.0.0.1:2276/v1
+    name: unsloth/Qwen3.6-27B-GGUF:Q8_0     # `curl 127.0.0.1:2276/v1/models` lists what's served
+    timeout_seconds: 120
+
+agent_models:        # every role local at Tier 0
+  default: local
+
+sandbox:
+  timeout_seconds: 10
+  network: disabled       # execution plane is always offline
+  max_attempts_per_task: 20
+
+evaluation:
+  primary_metric: pytest_pass_rate
+  require_reproducibility: true
+
+safety:
+  allow_network: false    # control-plane egress; off at Tier 0
+  allow_package_install: false
+  allow_evaluator_edits: false

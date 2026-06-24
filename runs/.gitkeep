@@ -1,0 +1,3 @@
+# Run outputs land here: attempts.jsonl and model_calls.jsonl (the audit ledger).
+# These JSONL records are auditable history and are kept in version control;
+# regenerated artifacts and the SQLite mirror are git-ignored (see .gitignore).

@@ -1,0 +1,3 @@
+# Role prompt templates live here (orchestrator, hypothesis_agent, ... ).
+# Added as the agent roles are implemented (Goals 05/08). Kept as files so the
+# meta-research loop can propose revisions under the gates.
