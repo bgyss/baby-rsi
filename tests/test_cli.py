@@ -67,3 +67,26 @@ def test_summarize_runs_shows_top_failure_modes(tmp_path, capsys):
 def test_summarize_runs_empty(tmp_path, capsys):
     assert main(["summarize-runs", str(tmp_path / "none.jsonl")]) == 0
     assert "No attempts" in capsys.readouterr().out
+
+
+def test_propose_meta_change_records_proposal(tmp_path, capsys):
+    archive_path = tmp_path / "attempts.jsonl"
+    store_path = tmp_path / "meta_changes.jsonl"
+    JSONLArchive(archive_path).append(
+        Attempt(
+            attempt_id="a1",
+            task_id="t",
+            candidate=Candidate(candidate_id="a1", task_id="t", code="pass"),
+            evaluation=EvaluationResult(passed_tests=0, failed_tests=3, score=-300.0),
+            status=AttemptStatus.REJECTED,
+            reason="3 test(s) failing",
+        )
+    )
+    # No --validate: proposes and records without needing a model server.
+    assert main(["propose-meta-change", str(archive_path), "--store", str(store_path)]) == 0
+    out = capsys.readouterr().out
+    assert "Proposed meta-change" in out
+    assert "Rollback:" in out
+    assert "human-gated" in out
+    # The proposal is recorded in the separate meta-change archive.
+    assert store_path.exists()

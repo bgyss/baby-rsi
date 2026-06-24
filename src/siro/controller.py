@@ -27,7 +27,15 @@ from .memory import ResearchMemory
 from .model_client import ModelClient, extract_code
 from .prompts import load_prompt
 from .sandbox import Sandbox
-from .schemas import Attempt, AttemptStatus, Candidate, GateReport, ModelCall, TaskSpec
+from .schemas import (
+    Attempt,
+    AttemptStatus,
+    Candidate,
+    GateReport,
+    ModelCall,
+    ProcessConfig,
+    TaskSpec,
+)
 
 
 @dataclass(frozen=True)
@@ -129,6 +137,7 @@ class Controller:
         ledger: ModelCallLedger | None = None,
         memory: ResearchMemory | None = None,
         prompts_dir: Path | None = None,
+        process: ProcessConfig | None = None,
     ) -> None:
         # NB: use `is None`, not `or` — JSONLArchive/ResearchMemory define __len__, so
         # an empty store is falsy and an `or` default would silently discard a real one.
@@ -137,6 +146,10 @@ class Controller:
         self.ledger = ModelCallLedger() if ledger is None else ledger
         self.memory = ResearchMemory() if memory is None else memory
         self.prompts_dir = prompts_dir
+        # The tunable process surface the outer (meta-research) loop A/B-tests within
+        # bounds (Goal 05). Default is the standard process; nothing here can reach a
+        # forbidden surface — ProcessConfig simply can't represent one.
+        self.process = ProcessConfig() if process is None else process
 
     def best_so_far(self) -> Attempt | None:
         """Best attempt currently in the archive."""
@@ -180,10 +193,11 @@ class Controller:
         self.memory.record(attempt)
 
     def _build_prompt(self, task: LoadedTask, current_code: str) -> str:
-        template = load_prompt("code_improver", self.prompts_dir)
+        template = load_prompt(self.process.prompt_name, self.prompts_dir)
         # Memory lessons are *data*, not instructions: the prompt frames them as
-        # untrusted reference and the task rules always take precedence.
-        lessons = self.memory.lessons_block(task.task_id)
+        # untrusted reference and the task rules always take precedence. How many
+        # lessons surface is the retrieval-strategy knob the meta-loop may tune.
+        lessons = self.memory.lessons_block(task.task_id, limit=self.process.retrieval_limit)
         return (
             template.replace("{task_prompt}", task.prompt)
             .replace("{module_name}", task.module_name)

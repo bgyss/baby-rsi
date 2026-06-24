@@ -21,7 +21,9 @@ from . import __version__
 from .archive import JSONLArchive, ModelCallLedger
 from .controller import Controller, select_best
 from .memory import ResearchMemory, failure_signature
+from .meta import MetaChangeStore, MetaResearcher
 from .model_client import LocalOpenAIClient
+from .schemas import MetaChangeRecord, MetaRecommendation
 
 
 def _cmd_run_task(args: argparse.Namespace) -> int:
@@ -81,12 +83,75 @@ def _cmd_summarize_runs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _print_meta_change(record: MetaChangeRecord) -> None:
+    """Render a meta-change record: the proposal, A/B deltas, and the gating reminder."""
+    proposal = record.proposal
+    print(f"Proposed meta-change [{proposal.kind.value}] target={proposal.target}")
+    print(f"  {proposal.description}")
+    print(f"  Rationale: {proposal.rationale}")
+    print(f"  Rollback:  {proposal.rollback_plan}")
+    if not proposal.bounds_ok:
+        print(f"  BOUNDS: out of bounds — {proposal.forbidden_reason} (cannot be applied)")
+
+    ab = record.ab_result
+    if ab is not None:
+        print(f"A/B on {len(ab.benchmark_tasks)} task(s), {ab.generations} generation(s) each:")
+        print(
+            f"  pass_rate            {ab.baseline.pass_rate:.0%} -> {ab.candidate.pass_rate:.0%}"
+            f"  (Δ {ab.deltas['pass_rate']:+.2f})"
+        )
+        print(
+            f"  median gens->success {ab.baseline.median_generations_to_success:.1f} -> "
+            f"{ab.candidate.median_generations_to_success:.1f}"
+            f"  (Δ {ab.deltas['median_generations_to_success']:+.1f})"
+        )
+        print(
+            f"  invalid candidates   {ab.baseline.invalid_candidates} -> "
+            f"{ab.candidate.invalid_candidates}"
+        )
+        print(
+            f"  safety gate failures {ab.baseline.safety_gate_failures} -> "
+            f"{ab.candidate.safety_gate_failures}"
+        )
+        print(
+            f"  score/generation     {ab.baseline.score_improvement_per_generation:.1f} -> "
+            f"{ab.candidate.score_improvement_per_generation:.1f}"
+        )
+
+    print(f"Recommendation: {record.recommendation.value} — {record.reason}")
+    if record.recommendation is MetaRecommendation.PROMOTE:
+        print("Durable application is human-gated: set approved=True before applying.")
+    print("Reminder: meta-changes are proposals only; promotion is human-gated.")
+
+
 def _cmd_propose_meta_change(args: argparse.Namespace) -> int:
     archive = JSONLArchive(args.path)
-    n = len(archive.read_all())
-    print(f"propose-meta-change: read {n} attempt(s) from {args.path}")
-    print("Not yet implemented — the bounded meta-research loop lands in Goal 05.")
-    print("Reminder: meta-changes are proposals only; promotion is human-gated.")
+    store = MetaChangeStore(args.store)
+    researcher = MetaResearcher(
+        archive=archive,
+        store=store,
+        benchmark_tasks=list(args.benchmark),
+        generations=args.generations,
+    )
+    print(f"propose-meta-change: read {len(archive.read_all())} attempt(s) from {args.path}")
+
+    if args.validate:
+        record = researcher.run(model_factory=lambda: LocalOpenAIClient())
+    else:
+        # Propose + record without running A/B (no model server needed). The record is
+        # stored as a pending rejection until validation runs — proposals are kept
+        # separately and audited either way.
+        proposal = researcher.propose()
+        record = MetaChangeRecord(
+            record_id=proposal.meta_change_id,
+            proposal=proposal,
+            recommendation=MetaRecommendation.REJECT,
+            reason="A/B validation not run (pass --validate to A/B on the benchmark)",
+        )
+        store.append(record)
+
+    _print_meta_change(record)
+    print(f"Recorded meta-change to {store.path} (separate from candidate attempts).")
     return 0
 
 
@@ -142,6 +207,31 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("runs/attempts.jsonl"),
         help="Path to attempts.jsonl (default: runs/attempts.jsonl).",
+    )
+    p_meta.add_argument(
+        "--store",
+        type=Path,
+        default=Path("runs/meta_changes.jsonl"),
+        help="Meta-change archive path, separate from attempts (default: runs/meta_changes.jsonl).",
+    )
+    p_meta.add_argument(
+        "--benchmark",
+        type=Path,
+        nargs="+",
+        default=[Path("tasks/code_improver/task_001")],
+        help="Fixed benchmark task dir(s) for A/B validation.",
+    )
+    p_meta.add_argument(
+        "-n",
+        "--generations",
+        type=int,
+        default=3,
+        help="Generations per benchmark run during A/B (default: 3).",
+    )
+    p_meta.add_argument(
+        "--validate",
+        action="store_true",
+        help="Run A/B validation on the benchmark (needs the local model server).",
     )
     p_meta.set_defaults(func=_cmd_propose_meta_change)
 
