@@ -18,7 +18,7 @@ Concrete backends:
 
 | Provider | Backend | Typical use |
 |---|---|---|
-| `local` | Ollama / llama.cpp (Qwen Coder, DeepSeek Coder) | Tier 0 testbed, cheap high-volume mutation |
+| `local` | llama.cpp / LlamaBarn over its OpenAI-compatible API (Qwen, DeepSeek Coder, gpt-oss) | Tier 0 testbed, cheap high-volume mutation |
 | `anthropic` | Claude (Messages API, tool use, structured output) | Hypothesis, implementation, interpretation, meta-research |
 | `openai` | GPT (Responses/Chat API, tool use, structured output) | Cross-model diversity, adversarial review, second opinions |
 
@@ -56,7 +56,7 @@ Introducing frontier APIs forces a hard separation that is now a **core invarian
 ┌─────────────────────────── CONTROL PLANE ───────────────────────────┐
 │ Orchestrator + agents (reasoning).                                   │
 │ MAY reach the network, but ONLY allow-listed model-provider endpoints│
-│ (api.anthropic.com, api.openai.com, local Ollama socket).            │
+│ (api.anthropic.com, api.openai.com, local llama.cpp socket).         │
 │ Holds API keys. Never executes untrusted candidate code.             │
 └──────────────────────────────────────────────────────────────────────┘
                                   │ produces patches / commands
@@ -91,8 +91,9 @@ Extend the example config (`10_repo_structure.md`) with a providers block and pe
 ```yaml
 providers:
   local:
-    backend: ollama
-    name: qwen2.5-coder:7b
+    backend: llamacpp                       # OpenAI-compatible llama.cpp / LlamaBarn server
+    base_url: http://127.0.0.1:2276/v1
+    name: unsloth/Qwen3.6-27B-GGUF:Q8_0      # `curl 127.0.0.1:2276/v1/models` lists what's served
     timeout_seconds: 120
   anthropic:
     backend: anthropic
@@ -126,7 +127,7 @@ network:
   allowed_endpoints:
     - api.anthropic.com
     - api.openai.com
-    - 127.0.0.1                  # local model server
+    - 127.0.0.1:2276             # local llama.cpp / LlamaBarn server
 ```
 
 ## Provider-agnostic guarantees

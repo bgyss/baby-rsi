@@ -59,3 +59,12 @@ Use a primary metric that is stable across candidate variants, such as:
 - No model deployment.
 - No autonomous fine-tuning of large models.
 - Human review required before expanding benchmark scope.
+
+## Self-improvement
+
+This goal applies the **inner loop to training**, not just code (`../13_self_improvement_loop.md`): agents propose constrained edits to a tiny training config/script under a fixed wall-clock budget.
+
+- **Records**: every training attempt with its validation metric and outcome, including runs that regressed or timed out.
+- **Reflects / proposes**: propose constrained config/script edits; keep the best by validation metric as the next seed.
+- **Validated / gated**: evaluate under the fixed wall-clock budget; promote only on a reproducible validation-metric improvement that respects the budget.
+- **Bounds**: per `../13_self_improvement_loop.md` — no budget/benchmark/scope expansion without human approval; execution plane stays offline.

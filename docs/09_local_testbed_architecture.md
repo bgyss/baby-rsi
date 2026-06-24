@@ -14,14 +14,14 @@ The toolchain is layered so each tool has one job and versions are pinned reprod
 
 - macOS or Linux
 - zsh-compatible shell scripts
-- **Nix** (flake) — reproducible bootstrap shell providing `mise` and native/system deps (Ollama, C toolchain). No global installs.
+- **Nix** (flake) — reproducible bootstrap shell providing `mise` and native/system deps (llama.cpp, C toolchain). No global installs.
 - **mise** — single source of truth for language tool versions (Python, `uv`) and the task runner.
 - **uv** — Python dependency resolution, lockfile, and `.venv` management.
 - Python 3.11+ (provided via mise)
 - `pytest`
 - SQLite or JSONL
-- Ollama or llama.cpp
-- Local coding model such as Qwen Coder, DeepSeek Coder, or similar
+- An OpenAI-compatible llama.cpp server. Default: an external **LlamaBarn** instance at `http://127.0.0.1:2276/v1`; alternatively `llama-server` (provided by the nix flake) run directly.
+- Local coding model served by that endpoint (e.g. Qwen, DeepSeek Coder, gpt-oss). Query `curl http://127.0.0.1:2276/v1/models` to see what's loaded.
 
 ### Entering the environment
 

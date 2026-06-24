@@ -30,8 +30,9 @@ All design docs live under [`docs/`](docs/).
 | `docs/10_repo_structure.md` | Suggested repository layout. |
 | `docs/11_risks_and_controls.md` | Main failure modes and controls (incl. frontier-provider risks). |
 | `docs/12_references.md` | Public references used to ground this draft. |
+| `docs/13_self_improvement_loop.md` | The uniform, bounded self-improvement contract every goal prompt and loop follows. |
 
-Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization.
+Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization. Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
 
 ## Capability tiers
 

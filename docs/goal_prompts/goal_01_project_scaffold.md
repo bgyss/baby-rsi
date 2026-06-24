@@ -59,3 +59,12 @@ Use:
 - Keep implementation minimal.
 - Favor explicit schemas and auditability.
 - Do not add autonomous package installation.
+
+## Self-improvement
+
+This goal lays the **substrate** every later self-improvement cycle runs on (`../13_self_improvement_loop.md`). It introduces no loop yet, but it must make the cycle *possible*:
+
+- **Records**: create `runs/` (attempt archive + `model_calls.jsonl` audit ledger) and the `memory`/`archive` module stubs so later goals can *observe* and *record*.
+- **Reflects / proposes**: stub the CLI surface the cycle uses — `siro summarize-runs` and `siro propose-meta-change` — even if they no-op for now.
+- **Validated / gated**: `mise run test` is the standing gate; nothing promotes without it.
+- **Bounds**: per `../13_self_improvement_loop.md` — no autonomous install, no network, no self-expanding permissions.

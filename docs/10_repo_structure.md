@@ -45,7 +45,7 @@ baby-rsi/
       model_client.py      # provider abstraction (Protocol)
       providers/
         __init__.py
-        local.py           # Ollama / llama.cpp
+        local.py           # llama.cpp / LlamaBarn (OpenAI-compatible)
         anthropic.py       # Claude
         openai.py          # GPT
       agents/
@@ -121,8 +121,9 @@ tier: 0
 
 providers:
   local:
-    backend: ollama
-    name: qwen2.5-coder:7b
+    backend: llamacpp                       # OpenAI-compatible llama.cpp / LlamaBarn server
+    base_url: http://127.0.0.1:2276/v1
+    name: unsloth/Qwen3.6-27B-GGUF:Q8_0
     timeout_seconds: 120
 
 agent_models:        # every role local at Tier 0

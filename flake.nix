@@ -24,7 +24,9 @@
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             mise           # language tool versions + task runner
-            ollama         # local model server for the research loop
+            llama-cpp      # local model server (llama-server) for the research loop;
+                           # Tier 0 talks to an OpenAI-compatible llama.cpp endpoint.
+                           # An external LlamaBarn server (127.0.0.1:2276) also works.
             stdenv.cc      # C toolchain for any native Python wheels
             git
             jujutsu        # repo is versioned with git + jj

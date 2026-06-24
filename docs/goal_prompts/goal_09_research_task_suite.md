@@ -41,3 +41,12 @@ Seed at least three task families with stable, objective metrics, for example:
 - No network or package installation in the execution plane.
 - Evaluators are read-only to agents; editing one requires human approval.
 - Expanding benchmark scope or compute/token budget requires human approval.
+
+## Self-improvement
+
+This goal provides the **fixed benchmark the validate step depends on** (`../13_self_improvement_loop.md`): a suite of genuine research-shaped tasks with objective evaluators, so improvement is measured on real work rather than templated mutation.
+
+- **Records**: per-task results across the suite, so the loops can reflect on aggregate progress, not a single task.
+- **Reflects / proposes**: the suite is the held-fixed A/B set both loops compare candidates and meta-changes against.
+- **Validated / gated**: evaluators must reward genuine task success, not visible-test overfitting or loopholes — a guard the self-improvement gate relies on.
+- **Bounds**: per `../13_self_improvement_loop.md` — expanding benchmark scope or compute/token budget requires human approval.

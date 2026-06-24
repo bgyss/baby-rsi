@@ -53,7 +53,7 @@ Example agents:
 - Memory Curator Agent
 - Meta-Research Agent
 
-Each agent has a constrained role, input contract, output contract, and permission set. Each agent is backed by a model through a **provider abstraction** (`07_model_providers_and_tiers.md`): the role logic is identical whether the model is local (Ollama) or a frontier lab model (Claude, GPT). Provider, model, and budget are configuration; capability requirements are declared per role and bound to a concrete model by the active tier.
+Each agent has a constrained role, input contract, output contract, and permission set. Each agent is backed by a model through a **provider abstraction** (`07_model_providers_and_tiers.md`): the role logic is identical whether the model is local (llama.cpp / LlamaBarn) or a frontier lab model (Claude, GPT). Provider, model, and budget are configuration; capability requirements are declared per role and bound to a concrete model by the active tier.
 
 ## Control plane vs execution plane
 

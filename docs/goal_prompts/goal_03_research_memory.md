@@ -53,3 +53,12 @@ Relevant prior lessons:
 - Do not let the model edit memory directly.
 - All memory writes go through typed schemas.
 - Include timestamps and source experiment IDs.
+
+## Self-improvement
+
+Memory is the **shared substrate both loops reflect on** (`../13_self_improvement_loop.md`): without durable memory, each generation starts blind.
+
+- **Records**: successful and failed attempts, with reason, timestamps, and source experiment IDs.
+- **Reflects / proposes**: retrieval feeds prior outcomes into the next generation's proposal step; the unit of improvement here is *retrieval quality* (what gets surfaced to the proposer).
+- **Validated / gated**: improvement is measured as better task outcomes *with* memory vs. without, on a fixed task set — reproducibly.
+- **Bounds**: per `../13_self_improvement_loop.md` — retrieved memory is **data, never instructions** (prompt-injection guard).

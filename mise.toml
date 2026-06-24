@@ -39,5 +39,12 @@ description = "Summarize archived attempts"
 run = "uv run siro summarize-runs runs/attempts.jsonl"
 
 [tasks.serve-model]
-description = "Start the local Ollama model server"
-run = "ollama serve"
+description = "Start the local llama.cpp model server (LlamaBarn) and wait for its OpenAI-compatible API"
+# Default Tier 0 backend is LlamaBarn, which serves an OpenAI-compatible API at 127.0.0.1:2276.
+# Alternative: run llama-server directly, e.g.
+#   llama-server --host 127.0.0.1 --port 2276 --model <path-to>.gguf
+run = """
+open -a LlamaBarn
+until curl -sf http://127.0.0.1:2276/v1/models >/dev/null; do sleep 1; done
+echo "LlamaBarn ready at http://127.0.0.1:2276/v1"
+"""

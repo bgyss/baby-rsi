@@ -2,7 +2,7 @@
 
 ## Goal
 
-Generalize the single `ModelClient` from Goal 02 into a provider-agnostic layer that supports local models (Ollama) **and** frontier lab models (Claude, GPT), with structured outputs, tool use, and full cost accounting — without changing the existing loop, evaluator, sandbox, or gates.
+Generalize the single `ModelClient` from Goal 02 into a provider-agnostic layer that supports local models (llama.cpp / LlamaBarn) **and** frontier lab models (Claude, GPT), with structured outputs, tool use, and full cost accounting — without changing the existing loop, evaluator, sandbox, or gates.
 
 See `07_model_providers_and_tiers.md`.
 
@@ -19,7 +19,7 @@ class ModelClient(Protocol):
 
 Backends:
 
-- `local.py` — Ollama / llama.cpp (refactor the existing Goal 02 client into this).
+- `local.py` — llama.cpp / LlamaBarn via its OpenAI-compatible API (refactor the existing Goal 02 client into this). Because the endpoint is OpenAI-compatible, this may share request/response plumbing with `openai.py`, differing only in `base_url` and that no real credential is required.
 - `anthropic.py` — Claude via the Messages API, with tool use and structured output.
 - `openai.py` — GPT via the Responses/Chat API, with tool use and structured output.
 
@@ -50,3 +50,12 @@ All three return a common `ModelResponse` carrying text/structured content, tool
 - Network access is limited to the configured provider endpoints (egress allowlist).
 - Swapping providers must not require editing the controller, evaluator, sandbox, gates, or memory schema.
 - Lowering `tier` back to 0 must work with no code change.
+
+## Self-improvement
+
+This goal makes self-improvement **cost-aware** (`../13_self_improvement_loop.md`): the audit ledger and per-role model assignment let the outer loop reflect on quality *and* spend, not just task score.
+
+- **Records**: every model call to `runs/model_calls.jsonl` — provider, model, tokens, cost estimate, latency, and the experiment it served.
+- **Reflects / proposes**: the meta-loop may propose per-role model-assignment changes (config-only) to spend frontier budget only where it earns its cost.
+- **Validated / gated**: A/B model assignments on a fixed task set; promote only on better outcome-per-cost, reproducibly.
+- **Bounds**: per `../13_self_improvement_loop.md` — provider endpoints, the egress allowlist, and budget ceilings are human-gated; no key ever enters the execution plane.
