@@ -18,13 +18,32 @@ from collections import Counter
 from pathlib import Path
 
 from . import __version__
-from .archive import JSONLArchive
-from .controller import select_best
+from .archive import JSONLArchive, ModelCallLedger
+from .controller import Controller, select_best
+from .model_client import LocalOpenAIClient
 
 
 def _cmd_run_task(args: argparse.Namespace) -> int:
-    print(f"run-task: {args.task_dir}")
-    print("Not yet implemented — the code-improver loop lands in Goal 02.")
+    model = LocalOpenAIClient()
+    controller = Controller(
+        archive=JSONLArchive(args.archive),
+        ledger=ModelCallLedger(args.model_calls),
+    )
+    result = controller.run_task(args.task_dir, model=model, generations=args.generations)
+
+    print(f"run-task: {args.task_dir}  ({args.generations} generation(s))")
+    for attempt in result.attempts:
+        ev = attempt.evaluation
+        print(
+            f"  {attempt.candidate.candidate_id:>12}  "
+            f"score={ev.score:>9.1f}  "
+            f"pass={ev.passed_tests} fail={ev.failed_tests}  "
+            f"{attempt.status.value:<8} {attempt.reason}"
+        )
+    best = result.best
+    if best is not None:
+        print(f"Best: {best.candidate.candidate_id} score={best.evaluation.score:.1f}")
+        print(f"Archived {len(result.attempts)} attempt(s) to {args.archive}")
     return 0
 
 
@@ -70,6 +89,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_run = sub.add_parser("run-task", help="Run the per-task improvement loop (Goal 02).")
     p_run.add_argument("task_dir", type=Path, help="Path to a task directory.")
+    p_run.add_argument(
+        "-n", "--generations", type=int, default=5, help="Number of generations (default: 5)."
+    )
+    p_run.add_argument(
+        "--archive",
+        type=Path,
+        default=Path("runs/attempts.jsonl"),
+        help="Attempts archive path (default: runs/attempts.jsonl).",
+    )
+    p_run.add_argument(
+        "--model-calls",
+        type=Path,
+        default=Path("runs/model_calls.jsonl"),
+        help="Model-call audit ledger path (default: runs/model_calls.jsonl).",
+    )
     p_run.set_defaults(func=_cmd_run_task)
 
     p_sum = sub.add_parser("summarize-runs", help="Summarize an attempts archive.")
