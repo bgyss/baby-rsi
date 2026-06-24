@@ -29,6 +29,54 @@ class AttemptStatus(str, Enum):
     ERROR = "error"
 
 
+class GateDecision(str, Enum):
+    """Outcome of one promotion gate. ``failed``/``escalated`` block promotion."""
+
+    PASSED = "passed"
+    FAILED = "failed"
+    ESCALATED = "escalated"
+
+
+class GateResult(BaseModel):
+    """One gate's decision plus the auditable reasons behind it (Goal 04).
+
+    Gates are the guardrail that keeps self-improvement *bounded*
+    (``docs/05_evaluation_and_safety_gates.md``, ``docs/13_self_improvement_loop.md``):
+    a candidate promotes only if every gate passes. Each result is recorded so that a
+    *rejected* proposal stays auditable data, never a silently dropped one.
+    """
+
+    gate: str
+    decision: GateDecision
+    risk_level: str = "low"
+    findings: list[str] = Field(default_factory=list)
+    notes: str = ""
+
+
+class GateReport(BaseModel):
+    """The full set of gate results attached to an :class:`Attempt`."""
+
+    results: list[GateResult] = Field(default_factory=list)
+
+    @property
+    def failed(self) -> bool:
+        """True if any gate did not pass (failed or escalated)."""
+        return any(r.decision is not GateDecision.PASSED for r in self.results)
+
+    @property
+    def passed(self) -> bool:
+        """True only if every recorded gate passed (vacuously true when empty)."""
+        return not self.failed
+
+    def first_failure_reason(self) -> str:
+        """A concise reason string for the first non-passing gate (for ``Attempt.reason``)."""
+        for r in self.results:
+            if r.decision is not GateDecision.PASSED:
+                detail = "; ".join(r.findings) or r.notes or "no detail"
+                return f"gate {r.gate} {r.decision.value}: {detail}"
+        return "all gates passed"
+
+
 class TaskSpec(BaseModel):
     """Identity of a task the controller can run. Filled out further in Goal 02."""
 
@@ -66,6 +114,7 @@ class Attempt(BaseModel):
     evaluation: EvaluationResult | None = None
     status: AttemptStatus = AttemptStatus.REJECTED
     reason: str = ""
+    gates: GateReport | None = None
     created_at: datetime = Field(default_factory=_utcnow)
 
 
@@ -118,6 +167,9 @@ class ModelCall(BaseModel):
 
 __all__ = [
     "AttemptStatus",
+    "GateDecision",
+    "GateResult",
+    "GateReport",
     "TaskSpec",
     "Candidate",
     "EvaluationResult",

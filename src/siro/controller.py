@@ -14,6 +14,7 @@ fixed test suite (``docs/07_model_providers_and_tiers.md``).
 from __future__ import annotations
 
 import hashlib
+import os
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -21,11 +22,12 @@ from pathlib import Path
 
 from .archive import JSONLArchive, ModelCallLedger
 from .evaluator import evaluate
+from .gates import function_signatures, promotion_gate, static_gates
 from .memory import ResearchMemory
 from .model_client import ModelClient, extract_code
 from .prompts import load_prompt
 from .sandbox import Sandbox
-from .schemas import Attempt, AttemptStatus, Candidate, ModelCall, TaskSpec
+from .schemas import Attempt, AttemptStatus, Candidate, GateReport, ModelCall, TaskSpec
 
 
 @dataclass(frozen=True)
@@ -42,10 +44,26 @@ class LoadedTask:
     seed_code: str
     tests_path: Path
     module_name: str
+    #: A held-out suite stored *outside* the task dir, never shown to the model. The
+    #: hidden-test gate (Goal 04) runs it; ``None`` when no hidden suite exists.
+    hidden_tests_path: Path | None = None
 
     @property
     def task_id(self) -> str:
         return self.spec.task_id
+
+
+def _discover_hidden_tests(task_dir: Path) -> Path | None:
+    """Locate a hidden test suite for ``task_dir``, stored *outside* it.
+
+    Looked for at ``<task_parent>/hidden_tests/<task_id>.py`` (a sibling of the task
+    directory), overridable with ``SIRO_HIDDEN_TESTS_DIR``. Keeping it outside the
+    task dir is what stops it from ever entering the model prompt.
+    """
+    override = os.environ.get("SIRO_HIDDEN_TESTS_DIR")
+    base = Path(override) if override else task_dir.parent / "hidden_tests"
+    candidate = base / f"{task_dir.name}.py"
+    return candidate if candidate.exists() else None
 
 
 def load_task(task_dir: str | Path) -> LoadedTask:
@@ -72,6 +90,7 @@ def load_task(task_dir: str | Path) -> LoadedTask:
         seed_code=seed_path.read_text(encoding="utf-8"),
         tests_path=tests_path,
         module_name=seed_path.stem,
+        hidden_tests_path=_discover_hidden_tests(path),
     )
 
 
@@ -123,8 +142,19 @@ class Controller:
         """Best attempt currently in the archive."""
         return select_best(self.archive.read_all())
 
-    def _evaluate_candidate(self, candidate: Candidate, task: LoadedTask) -> Attempt:
-        """Run a candidate through the sandbox + evaluator and build an Attempt."""
+    def _evaluate_candidate(
+        self,
+        candidate: Candidate,
+        task: LoadedTask,
+        allowed_signatures: dict[str, tuple[str, ...]] | None = None,
+    ) -> Attempt:
+        """Run a candidate through the sandbox + evaluator and build an Attempt.
+
+        The cheap, source-only gates (safety + code integrity) run on *every*
+        candidate so their findings are recorded for audit, even for ones that never
+        become a promotion contender. The heavier promotion gates run later, only when
+        a candidate is about to be promoted.
+        """
         sandbox_result = self.sandbox.run(candidate, task)
         evaluation = evaluate(sandbox_result, candidate.code)
         if sandbox_result.error:
@@ -133,6 +163,7 @@ class Controller:
             reason = f"{sandbox_result.failed_tests} test(s) failing"
         else:
             reason = "all tests passing"
+        gates = GateReport(results=static_gates(candidate.code, allowed_signatures=allowed_signatures))
         return Attempt(
             attempt_id=_short_id(),
             task_id=task.task_id,
@@ -140,6 +171,7 @@ class Controller:
             evaluation=evaluation,
             status=AttemptStatus.REJECTED,  # finalized by the caller against the best
             reason=reason,
+            gates=gates,
         )
 
     def _persist(self, attempt: Attempt) -> None:
@@ -186,10 +218,13 @@ class Controller:
         """
         task = load_task(task_dir)
         result = RunResult(task_id=task.task_id)
+        # The seed defines the public signatures a candidate may not change without
+        # approval (the code-integrity gate's allow-list for this experiment).
+        allowed_signatures = function_signatures(task.seed_code)
 
         # Generation 0 — the seed is itself a candidate (the baseline to beat).
         seed = Candidate(candidate_id="seed", task_id=task.task_id, code=task.seed_code)
-        baseline = self._evaluate_candidate(seed, task)
+        baseline = self._evaluate_candidate(seed, task, allowed_signatures)
         baseline.status = (
             AttemptStatus.PROMOTED if baseline.evaluation.reproducible else AttemptStatus.ERROR
         )
@@ -210,13 +245,32 @@ class Controller:
                 code=extract_code(raw),
                 parent_id=best.candidate.candidate_id,
             )
-            attempt = self._evaluate_candidate(candidate, task)
+            attempt = self._evaluate_candidate(candidate, task, allowed_signatures)
 
-            if not attempt.evaluation.reproducible:
+            if attempt.gates.failed:
+                # Safety / code-integrity violation: never promote, but keep the
+                # rejected proposal as auditable negative-result data.
+                attempt.status = AttemptStatus.REJECTED
+                attempt.reason = attempt.gates.first_failure_reason()
+            elif not attempt.evaluation.reproducible:
                 attempt.status = AttemptStatus.ERROR
             elif attempt.evaluation.score > best.evaluation.score:
-                attempt.status = AttemptStatus.PROMOTED
-                best = attempt
+                # Promotion contender: it must clear the full gate (reproducibility +
+                # hidden tests) before it can replace the best candidate.
+                report = promotion_gate(
+                    candidate,
+                    task,
+                    self.sandbox,
+                    allowed_signatures=allowed_signatures,
+                    hidden_tests_path=task.hidden_tests_path,
+                )
+                attempt.gates = report
+                if report.passed:
+                    attempt.status = AttemptStatus.PROMOTED
+                    best = attempt
+                else:
+                    attempt.status = AttemptStatus.REJECTED
+                    attempt.reason = report.first_failure_reason()
             else:
                 attempt.status = AttemptStatus.REJECTED
 

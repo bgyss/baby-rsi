@@ -44,6 +44,10 @@ _FAILURE_LESSONS: dict[str, str] = {
     "timeout": "Prefer efficient algorithms; a prior attempt exceeded the time limit.",
     "test_failures": "Handle edge cases explicitly (e.g. empty inputs); prior attempts failed tests.",
     "no_report": "Make sure the module defines the required public function(s).",
+    "gate_safety": "Solve it with plain computation — no network, subprocess, filesystem, or env access (a prior attempt was blocked by the safety gate).",
+    "gate_code_integrity": "Don't touch tests, evaluator, logging, or the public signature; a prior attempt was blocked by the code-integrity gate.",
+    "gate_reproducibility": "Produce deterministic output — a prior attempt gave inconsistent results across reruns.",
+    "gate_hidden_tests": "Generalize instead of hard-coding the visible tests; a prior attempt failed the held-out suite.",
 }
 
 #: Failure signature -> a follow-up recommendation stored on the memory entry.
@@ -52,6 +56,10 @@ _FOLLOW_UPS: dict[str, str] = {
     "timeout": "Reduce algorithmic complexity; avoid unbounded or nested loops.",
     "test_failures": "Re-read the task spec and cover edge cases (empty/boundary inputs).",
     "no_report": "Verify the public function name(s) and signature(s) match the spec.",
+    "gate_safety": "Remove any network/subprocess/filesystem/env access from the candidate.",
+    "gate_code_integrity": "Keep tests, evaluator, logging, and public signatures unchanged.",
+    "gate_reproducibility": "Make the implementation deterministic so reruns agree.",
+    "gate_hidden_tests": "Implement the general algorithm rather than special-casing visible inputs.",
 }
 
 
@@ -64,6 +72,10 @@ def failure_signature(reason: str) -> str:
     r = reason.strip().lower()
     if not r or r == "all tests passing":
         return "none"
+    if r.startswith("gate "):
+        # "gate <name> <decision>: ..." -> "gate_<name>" (Goal 04 gate rejections).
+        parts = r.split()
+        return f"gate_{parts[1]}" if len(parts) > 1 else "gate"
     if "timeout" in r:
         return "timeout"
     if "collection error" in r or "could not be imported" in r:

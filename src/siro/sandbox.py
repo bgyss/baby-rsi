@@ -119,13 +119,17 @@ class Sandbox:
         """Environment for a candidate subprocess: credentials scrubbed."""
         return scrub_execution_env()
 
-    def run(self, candidate, task) -> SandboxResult:  # noqa: ANN001
+    def run(self, candidate, task, tests_path=None) -> SandboxResult:  # noqa: ANN001
         """Run a candidate's tests in isolation and return a :class:`SandboxResult`.
 
         ``candidate`` supplies only its ``code`` (written to the task's module file);
-        ``task`` supplies the fixed ``tests_path`` and importable ``module_name``. The
-        test suite always comes from the task directory, never from the candidate.
+        ``task`` supplies the fixed ``module_name``. The test suite always comes from
+        a controller-chosen file on disk, never from the candidate: by default the
+        task's visible ``tests_path``, or an explicit ``tests_path`` override — which
+        is how the hidden-test gate runs a held-out suite the candidate never saw
+        (``docs/05_evaluation_and_safety_gates.md``).
         """
+        suite_path = Path(tests_path) if tests_path is not None else Path(task.tests_path)
         env = self.child_env()
         assert_execution_plane_isolated(env)  # belt-and-suspenders: never run with creds
 
@@ -133,7 +137,7 @@ class Sandbox:
             tmpdir = Path(tmp)
             (tmpdir / f"{task.module_name}.py").write_text(candidate.code, encoding="utf-8")
             (tmpdir / "tests.py").write_text(
-                Path(task.tests_path).read_text(encoding="utf-8"), encoding="utf-8"
+                suite_path.read_text(encoding="utf-8"), encoding="utf-8"
             )
             (tmpdir / "sitecustomize.py").write_text(_SITECUSTOMIZE, encoding="utf-8")
             report_path = tmpdir / "report.xml"
@@ -170,14 +174,14 @@ class Sandbox:
                     stderr=_truncate(exc.stderr or "", self.config.max_output_bytes),
                     runtime_ms=runtime_ms,
                     passed_tests=0,
-                    failed_tests=_count_expected_tests(Path(task.tests_path)),
+                    failed_tests=_count_expected_tests(suite_path),
                     timed_out=True,
                     error=f"timeout after {self.config.timeout_seconds}s",
                 )
             runtime_ms = (time.perf_counter() - start) * 1000.0
 
             parsed = _parse_junit(report_path)
-            expected = _count_expected_tests(Path(task.tests_path))
+            expected = _count_expected_tests(suite_path)
             if parsed is None:
                 # No report at all: count every test as failed; not a real run.
                 passed, failed = 0, expected

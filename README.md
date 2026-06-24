@@ -58,11 +58,15 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goal 01 (project scaffold) is implemented: the `siro` package (`src/siro/`) with
-explicit Pydantic schemas, an append-only JSONL archive + audit ledger, plane-isolation
-safety primitives, the objective scoring function, and a CLI surface. The experiment
-loop itself (`controller`/`sandbox` execution) lands in Goal 02. The canonical interface
-is `uv run siro` (mise tasks are thin wrappers):
+Goals 01–04 are implemented: the `siro` package (`src/siro/`) with explicit Pydantic
+schemas, an append-only JSONL archive + audit ledger, plane-isolation safety
+primitives, the objective scoring function, and a CLI surface (Goal 01); the per-task
+code-improver loop — `controller` + isolated `sandbox` execution (Goal 02); durable
+research `memory` distilled into the proposer prompt (Goal 03); and the promotion
+`gates` — code-integrity, safety, reproducibility, and hidden-test gates that bound
+what the loop may promote (Goal 04). The candidate-generation model layer (the
+provider abstraction) is generalized in Goal 07. The canonical interface is
+`uv run siro` (mise tasks are thin wrappers):
 
 ```zsh
 uv run siro --help
