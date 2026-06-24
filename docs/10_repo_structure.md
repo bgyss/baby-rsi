@@ -1,8 +1,9 @@
 # 10 — Suggested Repository Structure
 
 ```text
-self-improving-research-org/
+baby-rsi/
   README.md
+  CLAUDE.md
   flake.nix            # nix: reproducible bootstrap shell (mise + native deps)
   .envrc               # direnv: `use flake` + mise activation
   mise.toml            # mise: pinned python/uv versions + task runner
@@ -11,31 +12,30 @@ self-improving-research-org/
   config/
     tier0.local.yaml   # local-only config (Tier 0)
     tier1.frontier.yaml# frontier prototype config (Tier 1)
-  docs/
-    self-improving-research-org/
-      00_principles.md
-      01_system_architecture.md
-      02_research_operating_model.md
-      03_agent_roles.md
-      04_experiment_lifecycle.md
-      05_evaluation_and_safety_gates.md
-      06_research_memory_schema.md
-      07_model_providers_and_tiers.md
-      08_frontier_prototype_architecture.md
-      09_local_testbed_architecture.md
-      10_repo_structure.md
-      11_risks_and_controls.md
-      12_references.md
-      goal_prompts/
-        goal_01_project_scaffold.md
-        goal_02_code_improver_loop.md
-        goal_03_research_memory.md
-        goal_04_eval_and_safety_gates.md
-        goal_05_meta_research_loop.md
-        goal_06_local_training_autoresearch.md
-        goal_07_provider_abstraction.md
-        goal_08_frontier_research_org.md
-        goal_09_research_task_suite.md
+  docs/                # all design docs + goal prompts (no code)
+    00_principles.md
+    01_system_architecture.md
+    02_research_operating_model.md
+    03_agent_roles.md
+    04_experiment_lifecycle.md
+    05_evaluation_and_safety_gates.md
+    06_research_memory_schema.md
+    07_model_providers_and_tiers.md
+    08_frontier_prototype_architecture.md
+    09_local_testbed_architecture.md
+    10_repo_structure.md
+    11_risks_and_controls.md
+    12_references.md
+    goal_prompts/
+      goal_01_project_scaffold.md
+      goal_02_code_improver_loop.md
+      goal_03_research_memory.md
+      goal_04_eval_and_safety_gates.md
+      goal_05_meta_research_loop.md
+      goal_06_local_training_autoresearch.md
+      goal_07_provider_abstraction.md
+      goal_08_frontier_research_org.md
+      goal_09_research_task_suite.md
   src/
     siro/
       __init__.py

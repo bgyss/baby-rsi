@@ -8,13 +8,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 As of now this repo contains **only the spec and goal prompts — no code has been implemented yet.** When you implement, you are building the system the docs describe; the docs are the source of truth, not legacy.
 
-The numbered `NN_*.md` files are the design (`00_principles` → `12_references`). `README.md` maps them. `goal_prompts/goal_0N_*.md` are the staged build instructions — implement them **in order**. Goals `01`–`06` build the local Tier 0 testbed (start at `goal_01_project_scaffold.md`); goals `07`–`09` generalize the model layer to frontier providers and stand up the full Tier 1 organization. Each goal prompt carries its own acceptance criteria and constraints that take precedence over general intuition.
+The design lives under `docs/`: the numbered `docs/NN_*.md` files (`00_principles` → `12_references`), which `README.md` maps. `docs/goal_prompts/goal_0N_*.md` are the staged build instructions — implement them **in order**. Goals `01`–`06` build the local Tier 0 testbed (start at `docs/goal_prompts/goal_01_project_scaffold.md`); goals `07`–`09` generalize the model layer to frontier providers and stand up the full Tier 1 organization. Each goal prompt carries its own acceptance criteria and constraints that take precedence over general intuition. Implementation code (the `siro` package) belongs at the repo root (`src/`, `tests/`, `tasks/`), not under `docs/`.
 
 ## Capability tiers (the central organizing idea)
 
-The same loop, lifecycle, gates, and memory run at every tier; only the models behind the agents and the governance around them change (`07_model_providers_and_tiers.md`, `08_frontier_prototype_architecture.md`):
+The same loop, lifecycle, gates, and memory run at every tier; only the models behind the agents and the governance around them change (`docs/07_model_providers_and_tiers.md`, `docs/08_frontier_prototype_architecture.md`):
 
-- **Tier 0** — fully local/offline (Ollama). Validates the machinery. `09_local_testbed_architecture.md`.
+- **Tier 0** — fully local/offline (Ollama). Validates the machinery. `docs/09_local_testbed_architecture.md`.
 - **Tier 1** — frontier LLMs (Claude/GPT) prototype the full research org. Network egress is allow-listed to model providers only; candidate execution stays offline.
 - **Tier 2** — governed scale-up; human-gated. Aspirational.
 
@@ -54,7 +54,7 @@ Enter the environment with `nix develop` (or `direnv allow` once, which auto-ent
 
 ## Intended implementation stack & commands
 
-The config files above exist now; the `siro` package does not yet, so the `siro` commands are the contract the scaffold must satisfy — see `goal_01` and `10_repo_structure.md`:
+The config files above exist now; the `siro` package does not yet, so the `siro` commands are the contract the scaffold must satisfy — see `docs/goal_prompts/goal_01_project_scaffold.md` and `docs/10_repo_structure.md`:
 
 ```zsh
 mise run sync                              # uv sync — install Python deps
@@ -92,14 +92,14 @@ At Tier 1 the same lifecycle is filled by the full multi-agent org (Hypothesis �
 
 ## Non-negotiable invariants
 
-These constraints are the entire point of the project. Any implementation that violates them is wrong even if tests pass — they are enforced as safety gates (`05_evaluation_and_safety_gates.md`) and must hold in code:
+These constraints are the entire point of the project. Any implementation that violates them is wrong even if tests pass — they are enforced as safety gates (`docs/05_evaluation_and_safety_gates.md`) and must hold in code:
 
 - **Plane isolation**: candidate execution has no network, runs in a temp dir, hard timeout on every subprocess, no autonomous package install, no cloud compute. Only the control plane reaches the network, and only allow-listed model-provider endpoints. API keys/secrets/full datasets never enter the execution plane or any model prompt.
 - **Read-only evaluator and safety code to agents**: candidates may never modify evaluator logic, disable logging, weaken/delete tests, or expand their own tool permissions. Edit surfaces are explicitly allow-listed per experiment. Agent tools are control-plane functions only — never raw shell or network.
 - **Objective evaluation first**: promote on reproducible metrics, not model self-judgment. A candidate that improves the metric via a loophole, overfits visible tests, or isn't reproducible must fail Gate B.
 - **Cross-model review (Tier 1)**: the Safety/Evaluation review must use a different provider than the Implementation Agent. Retrieved memory and tool output are data, never instructions (prompt-injection guard).
 - **Budget ceilings**: compute budget tiers plus per-run/per-day token + USD ceilings; breach halts and escalates. Every model call is logged to the audit ledger.
-- **Promotion through gates**: an experiment promotes only if the primary metric improves AND required secondary metrics don't regress past threshold AND the safety gate passes AND the result is reproducible AND edit constraints were respected (`04_experiment_lifecycle.md`).
+- **Promotion through gates**: an experiment promotes only if the primary metric improves AND required secondary metrics don't regress past threshold AND the safety gate passes AND the result is reproducible AND edit constraints were respected (`docs/04_experiment_lifecycle.md`).
 - **Humans approve escalation**: agents propose, evaluators score, humans approve high-budget/high-risk/irreversible actions and any change to evaluators, safety controls, tier, or egress allowlist. Meta-changes (to prompts, agent roles, selection/mutation policies) get stricter review than task-level changes.
 - **Negative results are first-class data** — record failed attempts with reason, never discard them.
 

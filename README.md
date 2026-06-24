@@ -13,27 +13,29 @@ This is **not** a blueprint for unrestricted autonomous model self-replication o
 
 ## Document map
 
+All design docs live under [`docs/`](docs/).
+
 | File | Purpose |
 |---|---|
-| `00_principles.md` | Core principles, assumptions, tiers, and non-goals. |
-| `01_system_architecture.md` | End-to-end architecture; control plane vs execution plane. |
-| `02_research_operating_model.md` | How research work flows through the organization. |
-| `03_agent_roles.md` | Agent role definitions, interfaces, and model assignment. |
-| `04_experiment_lifecycle.md` | Experiment states, promotion rules, and rollback. |
-| `05_evaluation_and_safety_gates.md` | Capability, safety, regression, and governance gates. |
-| `06_research_memory_schema.md` | Schema for structured scientific memory. |
-| `07_model_providers_and_tiers.md` | Provider abstraction (local + Claude + GPT) and capability tiers. |
-| `08_frontier_prototype_architecture.md` | Tier 1: the full org prototyped with frontier LLMs. |
-| `09_local_testbed_architecture.md` | Tier 0: minimal local implementation with local models and code evaluators. |
-| `10_repo_structure.md` | Suggested repository layout. |
-| `11_risks_and_controls.md` | Main failure modes and controls (incl. frontier-provider risks). |
-| `12_references.md` | Public references used to ground this draft. |
+| `docs/00_principles.md` | Core principles, assumptions, tiers, and non-goals. |
+| `docs/01_system_architecture.md` | End-to-end architecture; control plane vs execution plane. |
+| `docs/02_research_operating_model.md` | How research work flows through the organization. |
+| `docs/03_agent_roles.md` | Agent role definitions, interfaces, and model assignment. |
+| `docs/04_experiment_lifecycle.md` | Experiment states, promotion rules, and rollback. |
+| `docs/05_evaluation_and_safety_gates.md` | Capability, safety, regression, and governance gates. |
+| `docs/06_research_memory_schema.md` | Schema for structured scientific memory. |
+| `docs/07_model_providers_and_tiers.md` | Provider abstraction (local + Claude + GPT) and capability tiers. |
+| `docs/08_frontier_prototype_architecture.md` | Tier 1: the full org prototyped with frontier LLMs. |
+| `docs/09_local_testbed_architecture.md` | Tier 0: minimal local implementation with local models and code evaluators. |
+| `docs/10_repo_structure.md` | Suggested repository layout. |
+| `docs/11_risks_and_controls.md` | Main failure modes and controls (incl. frontier-provider risks). |
+| `docs/12_references.md` | Public references used to ground this draft. |
 
-Goal prompts live in `goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization.
+Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization.
 
 ## Capability tiers
 
-The same loop, gates, and memory run at every tier — only the models behind the agents and the governance around them change (`07_model_providers_and_tiers.md`):
+The same loop, gates, and memory run at every tier — only the models behind the agents and the governance around them change (`docs/07_model_providers_and_tiers.md`):
 
 - **Tier 0** — fully local and offline; validates the machinery.
 - **Tier 1** — frontier LLMs (Claude / GPT) prototype the full research organization; network egress is allow-listed to model providers only, and candidate execution stays offline.
@@ -43,7 +45,7 @@ Lowering the tier is always config-only and safe.
 
 ## Development environment
 
-The toolchain is layered: **nix** (`flake.nix`) provides a reproducible bootstrap shell with `mise` and native deps; **mise** (`mise.toml`) pins the Python/`uv` versions and runs tasks; **uv** manages Python dependencies. See `09_local_testbed_architecture.md`.
+The toolchain is layered: **nix** (`flake.nix`) provides a reproducible bootstrap shell with `mise` and native deps; **mise** (`mise.toml`) pins the Python/`uv` versions and runs tasks; **uv** manages Python dependencies. See `docs/09_local_testbed_architecture.md`.
 
 ```zsh
 nix develop        # or: direnv allow  (auto-enters via .envrc)
@@ -55,8 +57,7 @@ mise tasks         # list available tasks
 
 ## Suggested use
 
-1. Create a new repo.
-2. Copy this directory into `docs/self-improving-research-org/`.
-3. Start with `goal_prompts/goal_01_project_scaffold.md`.
-4. Implement only the local, bounded testbed first.
-5. Add autonomy only after evaluation, sandboxing, and auditability are working.
+1. Read `docs/00_principles.md` and `docs/01_system_architecture.md` for the design.
+2. Start with `docs/goal_prompts/goal_01_project_scaffold.md` and implement goals in order.
+3. Implement only the local, bounded Tier 0 testbed first.
+4. Add the frontier-LLM Tier 1 organization (goals `07`–`09`) only after evaluation, sandboxing, and auditability are working.
