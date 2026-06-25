@@ -27,6 +27,7 @@ agent_models:                                # capability binding per role
   evaluation: local                          # objective; model only summarizes
   safety: openai                             # cross-model reviewer, distinct from implementer
   interpretation: anthropic
+  memory: anthropic                          # curates structured research memory
   meta_research: anthropic
 
 sandbox:

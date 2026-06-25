@@ -16,8 +16,11 @@ def test_core_modules_import():
         evaluator,
         memory,
         model_client,
+        orchestrator,
         prompts,
         safety,
         sandbox,
         schemas,
+        tools,
     )
+    from siro.agents import build_agents  # noqa: F401

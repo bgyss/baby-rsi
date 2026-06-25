@@ -6,6 +6,7 @@ cycle uses:
 
 - ``run-task``            — run the per-task improvement loop (Goal 02).
 - ``run-training``        — run the tiny-training improvement loop (Goal 06).
+- ``run-org``             — run one full frontier-org research cycle (Goal 08).
 - ``summarize-runs``      — reflect on the archive (real: counts + pass rate + best).
 - ``propose-meta-change`` — propose a process change (Goal 05).
 
@@ -26,6 +27,7 @@ from .controller import Controller, select_best
 from .memory import ResearchMemory, failure_signature
 from .meta import MetaChangeStore, MetaResearcher
 from .model_client import LocalOpenAIClient
+from .orchestrator import Orchestrator
 from .providers import ModelClient
 from .schemas import MetaChangeRecord, MetaRecommendation
 from .training import (
@@ -124,6 +126,50 @@ def _cmd_run_training(args: argparse.Namespace) -> int:
     if best is not None and best.result is not None:
         print(f"Best: {best.attempt_id} val_loss={best.result.val_loss:.6f}")
         print(f"Archived {len(result.attempts)} training attempt(s) to {args.archive}")
+    return 0
+
+
+def _cmd_run_org(args: argparse.Namespace) -> int:
+    """Run one full frontier-organization research cycle on a task (Goal 08).
+
+    Binds every role to its provider from the tier config (Tier 0 = all local; Tier 1 =
+    frontier reasoning + a different-provider safety reviewer). Lowering the tier is
+    config-only — no code change. Needs the model server / API keys the config selects.
+    """
+    config = load_config(args.config)
+    ledger = ModelCallLedger(args.model_calls)
+    budget = None if config.budget.unbounded else BudgetTracker(config.budget, ledger=ledger)
+    orchestrator = Orchestrator.from_config(
+        config,
+        memory=ResearchMemory(args.memory),
+        archive=JSONLArchive(args.archive),
+        ledger=ledger,
+        budget=budget,
+    )
+    print(f"config: tier {config.tier} ({args.config}); cross-model review: "
+          f"{'required' if orchestrator.require_cross_model else 'not required (all-local)'}")
+    try:
+        result = orchestrator.run_cycle(args.objective, args.task_dir)
+    except BudgetExceeded as exc:
+        print(f"HALTED — budget ceiling breached ({exc.kind}): {exc}")
+        print("Escalation required: a human must approve raising the ceiling (config-only).")
+        return 2
+
+    print(f"run-org: {args.task_dir}  objective={args.objective!r}")
+    for role in result.agent_outputs:
+        agent_result = result.agent_outputs[role]
+        provider = agent_result.response.provider or "?"
+        print(f"  {role:>15}  [{provider}]")
+    decision = result.promotion_decision.value
+    print(f"Promotion decision: {decision.upper()}  (attempt {result.attempt.attempt_id})")
+    if result.attempt.evaluation is not None:
+        ev = result.attempt.evaluation
+        print(f"  objective: score={ev.score:.1f} pass={ev.passed_tests} fail={ev.failed_tests}")
+    for escalation in result.escalations:
+        print(f"  ESCALATION: {escalation}")
+    if result.next_actions:
+        print(f"  next: {'; '.join(result.next_actions)}")
+    print(f"Recorded 1 attempt to {args.archive} and memory to {args.memory}.")
     return 0
 
 
@@ -309,6 +355,48 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Tier/provider config (default: {DEFAULT_CONFIG_PATH}).",
     )
     p_train.set_defaults(func=_cmd_run_training)
+
+    p_org = sub.add_parser(
+        "run-org", help="Run one full frontier-org research cycle (Goal 08)."
+    )
+    p_org.add_argument(
+        "task_dir",
+        type=Path,
+        nargs="?",
+        default=Path("tasks/code_improver/task_001"),
+        help="Path to a task directory (default: tasks/code_improver/task_001).",
+    )
+    p_org.add_argument(
+        "--objective",
+        default="Improve the task implementation against its objective metric.",
+        help="The human research objective the organization works toward.",
+    )
+    p_org.add_argument(
+        "--config",
+        type=Path,
+        default=Path("config/tier1.frontier.yaml"),
+        help="Tier/provider config (default: config/tier1.frontier.yaml). "
+        "Use config/tier0.local.yaml to run the same org fully local — config-only.",
+    )
+    p_org.add_argument(
+        "--archive",
+        type=Path,
+        default=Path("runs/attempts.jsonl"),
+        help="Attempts archive path (default: runs/attempts.jsonl).",
+    )
+    p_org.add_argument(
+        "--model-calls",
+        type=Path,
+        default=Path("runs/model_calls.jsonl"),
+        help="Model-call audit ledger path (default: runs/model_calls.jsonl).",
+    )
+    p_org.add_argument(
+        "--memory",
+        type=Path,
+        default=Path("runs/memory.jsonl"),
+        help="Research-memory path (default: runs/memory.jsonl).",
+    )
+    p_org.set_defaults(func=_cmd_run_org)
 
     p_sum = sub.add_parser("summarize-runs", help="Summarize an attempts archive.")
     p_sum.add_argument(

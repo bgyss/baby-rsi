@@ -58,7 +58,7 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goals 01–06 are implemented: the `siro` package (`src/siro/`) with explicit Pydantic
+Goals 01–08 are implemented: the `siro` package (`src/siro/`) with explicit Pydantic
 schemas, an append-only JSONL archive + audit ledger, plane-isolation safety
 primitives, the objective scoring function, and a CLI surface (Goal 01); the per-task
 code-improver loop — `controller` + isolated `sandbox` execution (Goal 02); durable
@@ -80,7 +80,23 @@ per-call token/cost/latency accounting), `config` (tier and per-role provider bi
 loaded from `config/tierN.*.yaml`), and `budget` (per-run/per-day USD and per-call token
 ceilings that halt-and-escalate on breach) — so the same Goal 02 loop runs at Tier 0
 (local) or Tier 1 (frontier) by **config only**, with every model call logged to
-`runs/model_calls.jsonl` and no credential ever reaching the execution plane (Goal 07).
+`runs/model_calls.jsonl` and no credential ever reaching the execution plane (Goal 07);
+and the full Tier 1 research organization — `orchestrator` + `agents/` + `tools`, which
+runs one human objective through the model-backed roles (Hypothesis → Literature → triage
+→ Implementation → code-integrity/safety gates → offline sandbox → objective evaluator +
+Evaluation narrative → cross-model Safety review → Interpretation → promotion gate → Memory
+Curator → agenda update). Each role is a provider-bindable agent with a role system prompt
+(`prompts/`), a typed input contract and Pydantic `output_schema` enforced via structured
+output, and a constrained **control-plane-only** toolset (`read_allowed_file`,
+`query_memory`, `list_references`, `propose_patch` — never shell or network). The same
+lifecycle, gates, evaluator, and memory schema are reused unchanged; only the agents behind
+the roles get more capable. The Safety reviewer binds to a *different* provider than the
+Implementation Agent (required and verified at Tier ≥ 1), and a disagreement between the
+safety reviewer and the objective promotion gate is surfaced as an **escalation**, not a
+tie-break. Every agent call is in the audit ledger and charged against the token/USD
+ceilings, candidate execution stays offline and sandboxed, meta-research stays proposal-only
+and human-gated, and dropping `tier: 1` → `tier: 0` returns the whole org to fully-local
+operation with no code change (Goal 08).
 The canonical interface is `uv run siro` (mise tasks are thin wrappers):
 
 ```zsh
@@ -89,6 +105,8 @@ uv run siro summarize-runs runs/attempts.jsonl        # reflect on the archive
 uv run siro run-task tasks/code_improver/task_001     # per-task code inner loop (Goal 02), Tier 0
 uv run siro run-task tasks/code_improver/task_001 --config config/tier1.frontier.yaml  # Tier 1 (Goal 07)
 uv run siro run-training tasks/training/task_001      # per-task training inner loop (Goal 06)
+uv run siro run-org tasks/code_improver/task_001 --objective "Make sum_list simpler"  # full Tier 1 org cycle (Goal 08)
+uv run siro run-org tasks/code_improver/task_001 --config config/tier0.local.yaml     # same org, fully local — config-only
 uv run siro propose-meta-change runs/attempts.jsonl   # meta-research outer loop (Goal 05)
 ```
 

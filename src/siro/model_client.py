@@ -48,24 +48,34 @@ class NullModelClient(BaseModelClient):
 class ScriptedModelClient(BaseModelClient):
     """Deterministic offline client that replays canned responses, in order.
 
-    Lets the full code-improver loop (and its tests) run for N generations with no
-    model server and no network — the same way negative results stay reproducible.
-    Usage is zero-cost so it never trips a budget ceiling.
+    Lets the full code-improver loop and the frontier organization (and their tests) run
+    for N generations with no model server and no network — the same way negative results
+    stay reproducible. Usage is zero-cost so it never trips a budget ceiling.
+
+    ``provider``/``model`` are configurable so an offline test can simulate *distinct*
+    providers (e.g. an Implementation client vs a different-provider Safety reviewer) and
+    exercise the cross-model-review invariant fully offline.
     """
 
-    def __init__(self, responses: list[str]) -> None:
+    def __init__(
+        self,
+        responses: list[str],
+        *,
+        provider: str = "scripted",
+        model: str = "scripted",
+    ) -> None:
         super().__init__()
         if not responses:
             raise ValueError("ScriptedModelClient needs at least one response")
-        self.provider = "scripted"
-        self.model = "scripted"
+        self.provider = provider
+        self.model = model
         self._responses = list(responses)
         self._i = 0
 
     def _complete(self, request: ModelRequest) -> ModelResponse:  # noqa: ARG002 - by design
         text = self._responses[min(self._i, len(self._responses) - 1)]
         self._i += 1
-        return ModelResponse(text=text, provider="scripted", model="scripted", usage=Usage())
+        return ModelResponse(text=text, provider=self.provider, model=self.model, usage=Usage())
 
 
 __all__ = [
