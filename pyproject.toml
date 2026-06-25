@@ -5,10 +5,14 @@ description = "Bounded, auditable self-improving research organization testbed."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-# Tier 0 is fully local/offline: the only runtime dependency is Pydantic for
-# explicit schemas. Provider SDKs (anthropic/openai) are added in Goal 07.
+# Tier 0 stays dependency-light: Pydantic for explicit schemas, PyYAML to read the
+# tier/provider config (Goal 07). The frontier provider backends (anthropic/openai)
+# talk to the REST endpoints through the stdlib HTTP layer in `providers/_http.py`
+# rather than vendor SDKs — fewer deps, one auditable egress chokepoint, and the whole
+# provider layer stays exercisable fully offline via an injected transport.
 dependencies = [
     "pydantic>=2.7",
+    "pyyaml>=6.0.3",
 ]
 
 [project.scripts]

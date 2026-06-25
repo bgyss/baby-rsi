@@ -20,10 +20,13 @@ from pathlib import Path
 
 from . import __version__
 from .archive import JSONLArchive, ModelCallLedger
+from .budget import BudgetExceeded, BudgetTracker
+from .config import DEFAULT_CONFIG_PATH, load_config
 from .controller import Controller, select_best
 from .memory import ResearchMemory, failure_signature
 from .meta import MetaChangeStore, MetaResearcher
 from .model_client import LocalOpenAIClient
+from .providers import ModelClient
 from .schemas import MetaChangeRecord, MetaRecommendation
 from .training import (
     DEFAULT_BUDGET_SECONDS,
@@ -33,14 +36,42 @@ from .training import (
 )
 
 
+def _build_runtime(
+    args: argparse.Namespace, ledger: ModelCallLedger, role: str
+) -> tuple[ModelClient, BudgetTracker | None, str]:
+    """Resolve the model client + budget for a run from config (Goal 07).
+
+    Tier and provider come from the config file alone — lowering tier back to 0 needs
+    no code change. ``--config`` defaults to the safe Tier 0 (local) posture; if the
+    file is missing we fall back to a bare local client so Tier 0 always works.
+    """
+    config_path = getattr(args, "config", None) or DEFAULT_CONFIG_PATH
+    if not config_path.exists():
+        return LocalOpenAIClient(), None, f"tier 0 (local default; {config_path} not found)"
+    config = load_config(config_path)
+    model = config.client_for_role(role)
+    budget = None if config.budget.unbounded else BudgetTracker(config.budget, ledger=ledger)
+    label = f"tier {config.tier} (role {role} -> {getattr(model, 'provider', '?')}:" \
+            f"{getattr(model, 'model', '?')})"
+    return model, budget, label
+
+
 def _cmd_run_task(args: argparse.Namespace) -> int:
-    model = LocalOpenAIClient()
+    ledger = ModelCallLedger(args.model_calls)
+    model, budget, label = _build_runtime(args, ledger, role="implementation")
     controller = Controller(
         archive=JSONLArchive(args.archive),
-        ledger=ModelCallLedger(args.model_calls),
+        ledger=ledger,
         memory=ResearchMemory(args.memory),
+        budget=budget,
     )
-    result = controller.run_task(args.task_dir, model=model, generations=args.generations)
+    print(f"config: {label}")
+    try:
+        result = controller.run_task(args.task_dir, model=model, generations=args.generations)
+    except BudgetExceeded as exc:
+        print(f"HALTED — budget ceiling breached ({exc.kind}): {exc}")
+        print("Escalation required: a human must approve raising the ceiling (config-only).")
+        return 2
 
     print(f"run-task: {args.task_dir}  ({args.generations} generation(s))")
     for attempt in result.attempts:
@@ -59,13 +90,23 @@ def _cmd_run_task(args: argparse.Namespace) -> int:
 
 
 def _cmd_run_training(args: argparse.Namespace) -> int:
-    model = LocalOpenAIClient()
+    ledger = ModelCallLedger(args.model_calls)
+    model, token_budget, label = _build_runtime(args, ledger, role="implementation")
     controller = TrainingController(
         archive=TrainingArchive(args.archive),
-        ledger=ModelCallLedger(args.model_calls),
+        ledger=ledger,
         budget_seconds=args.budget,
+        budget=token_budget,
     )
-    result = controller.run_training(args.task_dir, model=model, generations=args.generations)
+    print(f"config: {label}")
+    try:
+        result = controller.run_training(
+            args.task_dir, model=model, generations=args.generations
+        )
+    except BudgetExceeded as exc:
+        print(f"HALTED — budget ceiling breached ({exc.kind}): {exc}")
+        print("Escalation required: a human must approve raising the ceiling (config-only).")
+        return 2
 
     print(
         f"run-training: {args.task_dir}  "
@@ -221,6 +262,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("runs/memory.jsonl"),
         help="Research-memory path (default: runs/memory.jsonl).",
     )
+    p_run.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help=f"Tier/provider config (default: {DEFAULT_CONFIG_PATH}). Selecting tier is "
+        "config-only — no code change.",
+    )
     p_run.set_defaults(func=_cmd_run_task)
 
     p_train = sub.add_parser(
@@ -253,6 +301,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("runs/model_calls.jsonl"),
         help="Model-call audit ledger path (default: runs/model_calls.jsonl).",
+    )
+    p_train.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help=f"Tier/provider config (default: {DEFAULT_CONFIG_PATH}).",
     )
     p_train.set_defaults(func=_cmd_run_training)
 

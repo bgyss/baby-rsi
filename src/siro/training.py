@@ -333,11 +333,14 @@ class TrainingController:
         sandbox: Sandbox | None = None,
         ledger=None,  # noqa: ANN001 - ModelCallLedger, kept loose to avoid a hard import cycle
         budget_seconds: float = DEFAULT_BUDGET_SECONDS,
+        budget=None,  # noqa: ANN001 - BudgetTracker; None = unbounded (Tier 0 default)
     ) -> None:
         self.archive = TrainingArchive() if archive is None else archive
         self.sandbox = Sandbox() if sandbox is None else sandbox
         self.ledger = ledger
         self.budget_seconds = budget_seconds
+        # Token/USD ceilings (Goal 07); None = unbounded, the Tier 0 default.
+        self.budget = budget
 
     def _evaluate(self, config: TrainConfig) -> tuple[TrainResult, GateResult]:
         """Bounds-check a config, then (only if in bounds) train it under the budget."""
@@ -375,19 +378,26 @@ class TrainingController:
         )
 
     def _log_model_call(self, model: ModelClient, prompt: str, latency_ms: float, task_id: str) -> None:
-        if self.ledger is None:
-            return
-        import hashlib
+        # Capture per-call usage (tokens/cost) for the audit ledger and charge the
+        # budget — every model call is logged even the one that trips a ceiling (Goal 07).
+        usage = getattr(model, "last_usage", None)
+        if self.ledger is not None:
+            import hashlib
 
-        self.ledger.append(
-            ModelCall(
-                provider=getattr(model, "provider", "unknown"),
-                model=getattr(model, "model", "unknown"),
-                prompt_hash=hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16],
-                latency_ms=latency_ms,
-                experiment_id=task_id,
+            self.ledger.append(
+                ModelCall(
+                    provider=getattr(model, "provider", "unknown"),
+                    model=getattr(model, "model", "unknown"),
+                    prompt_hash=hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16],
+                    input_tokens=usage.input_tokens if usage else 0,
+                    output_tokens=usage.output_tokens if usage else 0,
+                    cost_usd=usage.cost_usd if usage else 0.0,
+                    latency_ms=(usage.latency_ms if usage and usage.latency_ms else latency_ms),
+                    experiment_id=task_id,
+                )
             )
-        )
+        if self.budget is not None and usage is not None:
+            self.budget.charge(usage)
 
     def _build_prompt(self, task: LoadedTrainingTask, current: TrainConfig) -> str:
         from .prompts import load_prompt

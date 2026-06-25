@@ -21,11 +21,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .archive import JSONLArchive, ModelCallLedger
+from .budget import BudgetTracker
 from .evaluator import evaluate
 from .gates import function_signatures, promotion_gate, static_gates
 from .memory import ResearchMemory
 from .model_client import ModelClient, extract_code
 from .prompts import load_prompt
+from .providers.base import Usage
 from .sandbox import Sandbox
 from .schemas import (
     Attempt,
@@ -138,6 +140,7 @@ class Controller:
         memory: ResearchMemory | None = None,
         prompts_dir: Path | None = None,
         process: ProcessConfig | None = None,
+        budget: BudgetTracker | None = None,
     ) -> None:
         # NB: use `is None`, not `or` — JSONLArchive/ResearchMemory define __len__, so
         # an empty store is falsy and an `or` default would silently discard a real one.
@@ -146,6 +149,9 @@ class Controller:
         self.ledger = ModelCallLedger() if ledger is None else ledger
         self.memory = ResearchMemory() if memory is None else memory
         self.prompts_dir = prompts_dir
+        # Token/USD ceilings (Goal 07). None = unbounded, the Tier 0 default — local
+        # inference is free, so the loop runs identically with no budget configured.
+        self.budget = budget
         # The tunable process surface the outer (meta-research) loop A/B-tests within
         # bounds (Goal 05). Default is the standard process; nothing here can reach a
         # forbidden surface — ProcessConfig simply can't represent one.
@@ -206,17 +212,33 @@ class Controller:
         )
 
     def _log_model_call(
-        self, model: ModelClient, prompt: str, latency_ms: float, task_id: str
+        self,
+        model: ModelClient,
+        prompt: str,
+        usage: Usage,
+        latency_ms: float,
+        task_id: str,
     ) -> None:
+        """Append one audit-ledger row, then charge the budget (Goal 07).
+
+        Logging happens *before* the budget check so every model call is recorded —
+        even the one that trips a ceiling. A breach raises ``BudgetExceeded``, which
+        propagates out of the loop as the halt-and-escalate signal.
+        """
         self.ledger.append(
             ModelCall(
                 provider=getattr(model, "provider", "unknown"),
                 model=getattr(model, "model", "unknown"),
                 prompt_hash=hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16],
-                latency_ms=latency_ms,
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                cost_usd=usage.cost_usd,
+                latency_ms=usage.latency_ms or latency_ms,
                 experiment_id=task_id,
             )
         )
+        if self.budget is not None:
+            self.budget.charge(usage)
 
     def run_task(
         self,
@@ -251,7 +273,8 @@ class Controller:
             start = time.perf_counter()
             raw = model.generate(prompt)
             latency_ms = (time.perf_counter() - start) * 1000.0
-            self._log_model_call(model, prompt, latency_ms, task.task_id)
+            usage = getattr(model, "last_usage", None) or Usage()
+            self._log_model_call(model, prompt, usage, latency_ms, task.task_id)
 
             candidate = Candidate(
                 candidate_id=_short_id(),

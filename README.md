@@ -73,14 +73,21 @@ tiny-training autoresearch loop — `training` + the fixed `training_task` bench
 deterministic pure-Python MLP), which applies the same inner loop to *training*: a
 candidate proposes a bounded `TrainConfig` delta, the sandbox trains it under a fixed
 wall-clock budget, and the best reproducible *validation-loss* improvement is promoted,
-with config deltas logged to a separate `runs/training_attempts.jsonl` archive (Goal 06).
-The candidate-generation model layer (the provider abstraction) is generalized in Goal 07.
+with config deltas logged to a separate `runs/training_attempts.jsonl` archive (Goal 06);
+and the provider abstraction — `providers/` (one `ModelClient` interface behind local
+llama.cpp/LlamaBarn, Claude, and GPT backends, with structured output, tool use, and
+per-call token/cost/latency accounting), `config` (tier and per-role provider binding
+loaded from `config/tierN.*.yaml`), and `budget` (per-run/per-day USD and per-call token
+ceilings that halt-and-escalate on breach) — so the same Goal 02 loop runs at Tier 0
+(local) or Tier 1 (frontier) by **config only**, with every model call logged to
+`runs/model_calls.jsonl` and no credential ever reaching the execution plane (Goal 07).
 The canonical interface is `uv run siro` (mise tasks are thin wrappers):
 
 ```zsh
 uv run siro --help
 uv run siro summarize-runs runs/attempts.jsonl        # reflect on the archive
-uv run siro run-task tasks/code_improver/task_001     # per-task code inner loop (Goal 02)
+uv run siro run-task tasks/code_improver/task_001     # per-task code inner loop (Goal 02), Tier 0
+uv run siro run-task tasks/code_improver/task_001 --config config/tier1.frontier.yaml  # Tier 1 (Goal 07)
 uv run siro run-training tasks/training/task_001      # per-task training inner loop (Goal 06)
 uv run siro propose-meta-change runs/attempts.jsonl   # meta-research outer loop (Goal 05)
 ```
