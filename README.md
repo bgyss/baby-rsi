@@ -35,7 +35,7 @@ All design docs live under [`docs/`](docs/).
 | `docs/15_scale_cost_model.md` | Source-backed deployment cost model and scale bands. |
 | `docs/16_low_cost_validation_plan.md` | Cheap local-to-frontier validation ladder. |
 
-Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`12` are implemented. Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
+Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`12` are implemented. Goals `13`–`20` are post-Tier-2 refinement specs: docs consistency (`13`), pricing audit (`14`), hard resource isolation (`15`), durable storage (`16`), benchmark expansion (`17`), provider operations (`18`), governance identity (`19`), and the bounded operational pilot (`20`). Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
 
 ## Capability tiers
 
@@ -61,10 +61,10 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goals 01–12 are implemented. Every
+Goals 01–12 are implemented; Goals 13–20 are specified, not yet implemented. Every
 implemented goal reuses the same lifecycle, gates, evaluator, and memory schema — only what
 fills the roles changes, by **config not code**, as the tier rises. Each entry below names
-its goal, the modules/artifacts it added, and what it does.
+its goal, the modules/artifacts it added or will add, and what it does.
 
 ### Tier 0 — local bounded testbed (Goals 01–06)
 
@@ -151,6 +151,38 @@ its goal, the modules/artifacts it added, and what it does.
   implementation provider), recorded in a `ModelRegistry`. Disabled entirely at Tier ≤ 1.
   CLI: `train-model`, `deploy-model`.
 
+### Cross-tier hardening and production refinements (Goals 13–20) — specified, not yet implemented
+
+- **Goal 13 — Documentation consistency contract** (`docs/goal_prompts/goals.json`,
+  docs checker): specifies a machine-readable goal manifest and docs consistency/privacy
+  checker so README status, goal prompts, and Self-improvement sections cannot drift
+  silently.
+- **Goal 14 — Pricing audit and budget calibration** (`pricing`, `config`, CLI): specifies
+  config-level model price overrides, reviewed dates, pricing-audit reports, and stricter
+  budget calibration so scale decisions use current source-backed estimates.
+- **Goal 15 — Hard resource isolation backend** (`sandbox`, `scale`): specifies a
+  Linux/container hard-isolation backend with cgroup-backed memory/process limits,
+  process-tree accounting, no execution-plane network, and portable local fallback tests.
+- **Goal 16 — Durable research store and query layer** (`archive`, `memory`, `storage`):
+  specifies a storage interface plus SQLite backend with migrations, idempotency,
+  stable lineage IDs, JSONL export compatibility, and optional tamper-evident governance
+  records.
+- **Goal 17 — Research benchmark suite expansion** (`tasks/research/`, `research`):
+  specifies a larger fixed benchmark with at least 10 tasks per existing family, new
+  families, adversarial/noisy tasks, and richer per-family/cost-per-promotion summaries.
+- **Goal 18 — Provider operations and observability** (`providers/`, `budget`, reports):
+  specifies provider error taxonomy, bounded retries, request metadata, per-role
+  concurrency limits, and spend/latency/error reports by provider, model, role, and task
+  family.
+- **Goal 19 — Governance identity and policy hardening** (`governance`, storage, CLI):
+  specifies typed operator identities, signed approvals, policy templates, two-person
+  approval where required, governance packet export, and ledger verification while keeping
+  agents unable to approve.
+- **Goal 20 — Bounded operational pilot and cost-per-promotion report** (`runs/pilots/`,
+  reports): specifies a fixed, budget-capped Tier 0 vs cheap-frontier vs strong-frontier
+  pilot that reports cost, promotion quality, safety escalations, and a continue/revise/stop
+  recommendation before any serious scale-up.
+
 The canonical interface is `uv run siro` (mise tasks are thin wrappers):
 
 ```zsh
@@ -178,3 +210,4 @@ uv run siro deploy-model <artifact_id> implementation --implementation-provider 
 2. Start with `docs/goal_prompts/goal_01_project_scaffold.md` and implement goals in order.
 3. Implement only the local, bounded Tier 0 testbed first.
 4. Add the frontier-LLM Tier 1 organization (goals `07`–`09`) only after evaluation, sandboxing, and auditability are working.
+5. Treat goals `13`–`20` as the post-Tier-2 hardening roadmap before any serious scale-up.

@@ -185,6 +185,19 @@ Refinement:
 
 ## Recommended next milestones
 
+The refinement areas above are now captured as staged goal prompts:
+
+| Refinement area | Goal prompt |
+|---|---|
+| Documentation drift and docs privacy | `docs/goal_prompts/goal_13_docs_consistency_contract.md` |
+| Pricing defaults and budget calibration | `docs/goal_prompts/goal_14_pricing_audit_and_budget_calibration.md` |
+| Hard resource isolation for scale-up | `docs/goal_prompts/goal_15_hard_resource_isolation.md` |
+| Durable queryable storage | `docs/goal_prompts/goal_16_durable_research_store.md` |
+| Benchmark-suite expansion | `docs/goal_prompts/goal_17_benchmark_suite_expansion.md` |
+| Provider operations and observability | `docs/goal_prompts/goal_18_provider_operations_and_observability.md` |
+| Governance identity and policy hardening | `docs/goal_prompts/goal_19_governance_identity_and_policy.md` |
+| Bounded operational pilot | `docs/goal_prompts/goal_20_operational_pilot_report.md` |
+
 ### Milestone A - Hardening pass
 
 Goal: make the implemented Goals 01-12 internally consistent and locally green.
