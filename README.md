@@ -35,7 +35,7 @@ All design docs live under [`docs/`](docs/).
 | `docs/15_scale_cost_model.md` | Source-backed deployment cost model and scale bands. |
 | `docs/16_low_cost_validation_plan.md` | Cheap local-to-frontier validation ladder. |
 
-Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`16` are implemented. Goals `17`–`20` are post-Tier-2 refinement specs: benchmark expansion (`17`), provider operations (`18`), governance identity (`19`), and the bounded operational pilot (`20`). Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
+Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`17` are implemented. Goals `18`–`20` are post-Tier-2 refinement specs: provider operations (`18`), governance identity (`19`), and the bounded operational pilot (`20`). Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
 
 ## Capability tiers
 
@@ -61,11 +61,12 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goals 01-16 are implemented; Goals 17-20 are specified, not yet implemented.
+Goals 01-17 are implemented; Goals 18-20 are specified, not yet implemented.
 The implemented set includes the Tier 2 governance, compute scale-up, model-training
 testbed work that landed in Goals 10–12, the docs consistency contract in Goal 13,
 the pricing audit/budget-calibration contract in Goal 14, the hard
-resource-isolation backend in Goal 15, and the durable research store in Goal 16.
+resource-isolation backend in Goal 15, the durable research store in Goal 16, and the
+expanded research benchmark suite in Goal 17.
 Every implemented goal reuses the same lifecycle, gates, evaluator, and memory
 schema — only what fills the roles changes, by **config not code**, as the tier rises. Each
 entry below names its goal, the modules/artifacts it added or will add, and what it does.
@@ -155,7 +156,7 @@ entry below names its goal, the modules/artifacts it added or will add, and what
   implementation provider), recorded in a `ModelRegistry`. Disabled entirely at Tier ≤ 1.
   CLI: `train-model`, `deploy-model`.
 
-### Cross-tier hardening and production refinements (Goals 13–16)
+### Cross-tier hardening and production refinements (Goals 13–17)
 
 - **Goal 13 — Documentation consistency contract** (`docs/goal_prompts/goals.json`,
   `docs_check`, CLI): machine-readable goal manifest and docs consistency/privacy
@@ -181,11 +182,14 @@ entry below names its goal, the modules/artifacts it added or will add, and what
   records, and byte-compatible JSONL export/import. `summarize-runs`/`summarize-research`
   read through either backend. CLI: `storage-migrate`, `storage-import`, `storage-export`,
   `storage-verify`.
+- **Goal 17 — Research benchmark suite expansion** (`tasks/research/`, `research`): expands
+  the fixed suite to at least 10 tasks each for algorithm, training, and policy work, adds
+  data-cleaning and parser/validator families, tags adversarial variants, keeps hidden data
+  held out of prompts and candidate working directories, and reports richer per-family
+  summary fields including mixed/failed outcomes, hidden/reproducibility failures, and
+  cost per promotion.
 
-### Cross-tier hardening and production refinements (Goals 17–20) — specified, not yet implemented
-- **Goal 17 — Research benchmark suite expansion** (`tasks/research/`, `research`):
-  specifies a larger fixed benchmark with at least 10 tasks per existing family, new
-  families, adversarial/noisy tasks, and richer per-family/cost-per-promotion summaries.
+### Cross-tier hardening and production refinements (Goals 18–20) — specified, not yet implemented
 - **Goal 18 — Provider operations and observability** (`providers/`, `budget`, reports):
   specifies provider error taxonomy, bounded retries, request metadata, per-role
   concurrency limits, and spend/latency/error reports by provider, model, role, and task
@@ -236,9 +240,9 @@ uv run pytest tests/test_cli.py::test_tier2_model_training_smoke_path_uses_separ
 
 1. Read `docs/00_principles.md` and `docs/01_system_architecture.md` for the design.
 2. For historical build context, read the implemented goal prompts in order: `01`–`06` for
-   Tier 0, `07`–`09` for Tier 1, `10`–`12` for the Tier 2 governed testbed, and `13`–`14`
-   for the first cross-tier hardening contracts.
+   Tier 0, `07`–`09` for Tier 1, `10`–`12` for the Tier 2 governed testbed, and `13`–`17`
+   for the cross-tier hardening contracts.
 3. Use the command block above to exercise the current implementation by tier; lowering a
    run from Tier 2 → 1 → 0 is config-only.
-4. Treat goals `15`–`20` as the remaining post-Tier-2 hardening roadmap before any serious
+4. Treat goals `18`–`20` as the remaining post-Tier-2 hardening roadmap before any serious
    scale-up.

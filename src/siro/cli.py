@@ -322,10 +322,17 @@ def _cmd_summarize_research(args: argparse.Namespace) -> int:
             else "n/a"
         )
         print(f"\n[{family}]  tasks: {', '.join(s.task_ids)}")
-        print(f"  attempts={s.attempts}  promoted={s.promoted}  pass_rate={s.pass_rate:.0%}")
+        cost_per = "n/a" if s.cost_per_promotion is None else f"${s.cost_per_promotion:.4f}"
+        print(
+            f"  attempts={s.attempts}  accepted={s.accepted}  promoted={s.promoted}  "
+            f"mixed={s.mixed}  failed={s.failed}  pass_rate={s.pass_rate:.0%}"
+        )
         print(f"  median cycles to success: {cycles}")
-        print(f"  safety-gate failures: {s.safety_gate_failures}")
-        print(f"  spend: {s.tokens} tokens  ${s.cost_usd:.4f}")
+        print(
+            f"  gate failures: safety={s.safety_gate_failures} "
+            f"hidden={s.hidden_test_failures} reproducibility={s.reproducibility_failures}"
+        )
+        print(f"  spend: {s.tokens} tokens  ${s.cost_usd:.4f}  cost/promotion={cost_per}")
         print(f"  strategy diversity: {s.strategy_diversity:.0%}  (distinct candidates / attempts)")
     return 0
 

@@ -48,9 +48,9 @@ def test_readme_status_drift_fails_when_manifest_says_implemented(tmp_path):
     root = copy_docs_tree(tmp_path)
     readme = root / "README.md"
     text = readme.read_text(encoding="utf-8")
-    old_heading = "### Cross-tier hardening and production refinements (Goals 13–16)"
+    old_heading = "### Cross-tier hardening and production refinements (Goals 13–17)"
     drift_heading = (
-        "### Cross-tier hardening and production refinements (Goals 13–16) "
+        "### Cross-tier hardening and production refinements (Goals 13–17) "
         "— specified, not yet implemented"
     )
     text = text.replace(

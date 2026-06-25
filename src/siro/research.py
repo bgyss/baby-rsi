@@ -358,12 +358,18 @@ class ResearchFamilySummary:
     family: str
     task_ids: list[str] = field(default_factory=list)
     attempts: int = 0
+    accepted: int = 0
     promoted: int = 0
+    mixed: int = 0
+    failed: int = 0
     pass_rate: float = 0.0
     median_cycles_to_success: float | None = None
     safety_gate_failures: int = 0
+    hidden_test_failures: int = 0
+    reproducibility_failures: int = 0
     tokens: int = 0
     cost_usd: float = 0.0
+    cost_per_promotion: float | None = None
     strategy_diversity: float = 0.0
 
 
@@ -389,6 +395,14 @@ def _has_safety_gate_failure(attempt: ResearchAttempt) -> bool:
         return False
     return any(
         r.gate == "safety" and r.decision is not GateDecision.PASSED for r in attempt.gates.results
+    )
+
+
+def _has_gate_failure(attempt: ResearchAttempt, needle: str) -> bool:
+    if attempt.gates is None:
+        return False
+    return any(
+        needle in r.gate and r.decision is not GateDecision.PASSED for r in attempt.gates.results
     )
 
 
@@ -422,6 +436,13 @@ def summarize_research(
         n = len(fam_attempts)
         passed = sum(1 for a in fam_attempts if a.metric is not None and a.metric.passed)
         promoted = sum(1 for a in fam_attempts if a.status is AttemptStatus.PROMOTED)
+        errors = sum(1 for a in fam_attempts if a.status is AttemptStatus.ERROR)
+        rejected = sum(1 for a in fam_attempts if a.status is AttemptStatus.REJECTED)
+        mixed = sum(
+            1
+            for a in fam_attempts
+            if a.status is AttemptStatus.REJECTED and a.metric is not None and a.metric.passed
+        )
 
         cycles: list[float] = []
         for task_id in task_ids:
@@ -436,12 +457,28 @@ def summarize_research(
             family=family,
             task_ids=task_ids,
             attempts=n,
+            accepted=promoted,
             promoted=promoted,
+            mixed=mixed,
+            failed=rejected + errors - mixed,
             pass_rate=(passed / n) if n else 0.0,
             median_cycles_to_success=_median(cycles) if cycles else None,
             safety_gate_failures=sum(1 for a in fam_attempts if _has_safety_gate_failure(a)),
+            hidden_test_failures=sum(
+                1
+                for a in fam_attempts
+                if _has_gate_failure(a, "hidden") or "hidden" in a.reason.lower()
+            ),
+            reproducibility_failures=sum(
+                1
+                for a in fam_attempts
+                if _has_gate_failure(a, "reproducibility")
+                or "reproduc" in a.reason.lower()
+                or (a.metric is not None and a.metric.passed and not a.metric.reproducible)
+            ),
             tokens=tokens,
             cost_usd=cost,
+            cost_per_promotion=(cost / promoted) if promoted else None,
             strategy_diversity=(distinct / n) if n else 0.0,
         )
     return summaries

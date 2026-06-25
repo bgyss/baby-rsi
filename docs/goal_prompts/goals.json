@@ -147,11 +147,11 @@
     {
       "number": 17,
       "title": "Research benchmark suite expansion",
-      "status": "specified",
+      "status": "implemented",
       "category": "Cross-tier hardening",
       "prompt_path": "docs/goal_prompts/goal_17_benchmark_suite_expansion.md",
       "artifacts": ["tasks/research/", "src/siro/research.py"],
-      "summary": "Specifies a larger benchmark suite, adversarial/noisy tasks, and richer cost-per-promotion summaries."
+      "summary": "Expands the fixed benchmark suite across existing and new families with adversarial variants and richer per-family summaries."
     },
     {
       "number": 18,

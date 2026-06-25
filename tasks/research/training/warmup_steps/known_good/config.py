@@ -1,0 +1,1 @@
+CONFIG = {"learning_rate": 0.28, "steps": 85}

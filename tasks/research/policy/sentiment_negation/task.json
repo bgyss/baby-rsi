@@ -1,0 +1,11 @@
+{
+  "family": "policy",
+  "objective": "Improve a rule policy over held-out labeled text.",
+  "edit_surface": "policy.py",
+  "primary_metric": "accuracy",
+  "higher_is_better": true,
+  "budget_seconds": 5.0,
+  "adversarial_tags": [
+    "primary_win_can_regress_secondary"
+  ]
+}

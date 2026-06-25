@@ -1,0 +1,8 @@
+{
+  "family": "algorithm",
+  "objective": "Return whether any two values sum to target.",
+  "edit_surface": "solution.py",
+  "primary_metric": "accuracy",
+  "higher_is_better": true,
+  "budget_seconds": 5.0
+}
