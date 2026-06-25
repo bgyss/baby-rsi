@@ -41,8 +41,10 @@ Depends on Goals 01-12.
 - If a goal prompt lacks `## Self-improvement`, the checker fails with the prompt path.
 - If README status says a goal is unimplemented while the manifest says implemented, the
   checker fails.
+<!-- docs-privacy-allow-start: intentional forbidden-path examples for the privacy checker -->
 - The docs privacy check catches accidental `/Users/`, `/home/`, `.codex`, `/Applications`,
   and `/private/tmp` references in generated docs unless explicitly allowlisted.
+<!-- docs-privacy-allow-end -->
 - The checker is wired into an existing thin task (`mise run ...`) or documented in the
   README with the exact command.
 

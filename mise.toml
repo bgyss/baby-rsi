@@ -29,6 +29,10 @@ run = "uv run pytest"
 description = "Static checks"
 run = "uv run ruff check ."
 
+[tasks.check-docs]
+description = "Check README, goal manifest, goal prompts, and docs privacy"
+run = "uv run siro check-docs"
+
 [tasks.fmt]
 description = "Format code"
 run = "uv run ruff format ."

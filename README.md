@@ -35,7 +35,7 @@ All design docs live under [`docs/`](docs/).
 | `docs/15_scale_cost_model.md` | Source-backed deployment cost model and scale bands. |
 | `docs/16_low_cost_validation_plan.md` | Cheap local-to-frontier validation ladder. |
 
-Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`12` are implemented. Goals `13`–`20` are post-Tier-2 refinement specs: docs consistency (`13`), pricing audit (`14`), hard resource isolation (`15`), durable storage (`16`), benchmark expansion (`17`), provider operations (`18`), governance identity (`19`), and the bounded operational pilot (`20`). Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
+Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`13` are implemented. Goals `14`–`20` are post-Tier-2 refinement specs: pricing audit (`14`), hard resource isolation (`15`), durable storage (`16`), benchmark expansion (`17`), provider operations (`18`), governance identity (`19`), and the bounded operational pilot (`20`). Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
 
 ## Capability tiers
 
@@ -61,9 +61,10 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goals 01–12 are implemented, including the Tier 2 governance, compute scale-up, and
-model-training testbed work that landed in Goals 10–12. Goals 13–20 are specified, not yet
-implemented. Every implemented goal reuses the same lifecycle, gates, evaluator, and memory
+Goals 01-13 are implemented; Goals 14-20 are specified, not yet implemented.
+The implemented set includes the Tier 2 governance, compute scale-up, model-training
+testbed work that landed in Goals 10–12, and the docs consistency contract in Goal 13.
+Every implemented goal reuses the same lifecycle, gates, evaluator, and memory
 schema — only what fills the roles changes, by **config not code**, as the tier rises. Each
 entry below names its goal, the modules/artifacts it added or will add, and what it does.
 
@@ -152,12 +153,15 @@ entry below names its goal, the modules/artifacts it added or will add, and what
   implementation provider), recorded in a `ModelRegistry`. Disabled entirely at Tier ≤ 1.
   CLI: `train-model`, `deploy-model`.
 
-### Cross-tier hardening and production refinements (Goals 13–20) — specified, not yet implemented
+### Cross-tier hardening and production refinements (Goal 13)
 
 - **Goal 13 — Documentation consistency contract** (`docs/goal_prompts/goals.json`,
-  docs checker): specifies a machine-readable goal manifest and docs consistency/privacy
+  `docs_check`, CLI): machine-readable goal manifest and docs consistency/privacy
   checker so README status, goal prompts, and Self-improvement sections cannot drift
-  silently.
+  silently. CLI: `check-docs`; task: `mise run check-docs`.
+
+### Cross-tier hardening and production refinements (Goals 14–20) — specified, not yet implemented
+
 - **Goal 14 — Pricing audit and budget calibration** (`pricing`, `config`, CLI): specifies
   config-level model price overrides, reviewed dates, pricing-audit reports, and stricter
   budget calibration so scale decisions use current source-backed estimates.
@@ -203,6 +207,8 @@ uv run siro approve <request_id> --by <human>         # human-only grant; list-a
 uv run siro run-scaled --compute-tier 1               # eval under a governed compute budget (Goal 11)
 uv run siro train-model exp1                          # governed weight-update experiment (Goal 12)
 uv run siro deploy-model <artifact_id> implementation --implementation-provider anthropic --reviewer-provider openai  # gated deploy (Goal 12)
+uv run siro check-docs                                # README/manifest/goal prompt/privacy contract (Goal 13)
+mise run check-docs                                   # thin wrapper around the same docs contract
 uv run pytest tests/test_cli.py::test_tier2_model_training_smoke_path_uses_separate_train_and_deploy_approvals  # cheap Tier 2 approval/deploy smoke
 ```
 

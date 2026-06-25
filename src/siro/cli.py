@@ -11,6 +11,8 @@ cycle uses:
 - ``run-scaled``          — run an eval under a governed compute budget (Goal 11).
 - ``train-model`` / ``deploy-model`` — governed weight-update experiments (Goal 12);
                             both human-gated, deploy needs cross-model review.
+- ``check-docs``          — verify README/goal manifest consistency and docs privacy
+                            patterns (Goal 13).
 - ``summarize-runs``      — reflect on the archive (real: counts + pass rate + best).
 - ``summarize-research``  — per-family summary of the research suite (Goal 09).
 - ``propose-meta-change`` — propose a process change (Goal 05).
@@ -33,6 +35,7 @@ from .archive import JSONLArchive, ModelCallLedger
 from .budget import BudgetExceeded, BudgetTracker
 from .config import DEFAULT_CONFIG_PATH, load_config
 from .controller import Controller, select_best
+from .docs_check import DEFAULT_MANIFEST_PATH, check_docs
 from .governance import (
     DEFAULT_APPROVALS_PATH,
     ApprovalLedger,
@@ -634,6 +637,22 @@ def _cmd_deploy_model(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_check_docs(args: argparse.Namespace) -> int:
+    result = check_docs(root=args.root, manifest_path=args.manifest)
+    if result.ok:
+        print(
+            "docs check passed: "
+            f"{result.checked_goal_count} goals, "
+            f"{result.checked_doc_count} numbered docs, "
+            f"{result.checked_privacy_file_count} privacy-scanned files"
+        )
+        return 0
+    print("docs check failed:")
+    for error in result.errors:
+        print(f"- {error}")
+    return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="siro",
@@ -967,6 +986,27 @@ def build_parser() -> argparse.ArgumentParser:
     p_deploy.add_argument("--store", type=Path, default=DEFAULT_ARTIFACT_STORE_DIR)
     p_deploy.add_argument("--registry", type=Path, default=DEFAULT_MODEL_REGISTRY_PATH)
     p_deploy.set_defaults(func=_cmd_deploy_model)
+
+    p_docs = sub.add_parser(
+        "check-docs",
+        help="Check docs/README/goal manifest consistency and docs privacy (Goal 13).",
+    )
+    p_docs.add_argument(
+        "--root",
+        type=Path,
+        default=Path("."),
+        help="Repository root to check (default: current directory).",
+    )
+    p_docs.add_argument(
+        "--manifest",
+        type=Path,
+        default=DEFAULT_MANIFEST_PATH,
+        help=(
+            "Goal manifest path, relative to --root by default "
+            f"(default: {DEFAULT_MANIFEST_PATH})."
+        ),
+    )
+    p_docs.set_defaults(func=_cmd_check_docs)
 
     p_sum = sub.add_parser("summarize-runs", help="Summarize an attempts archive.")
     p_sum.add_argument(
