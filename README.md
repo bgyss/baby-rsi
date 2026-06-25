@@ -58,7 +58,7 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goals 01–10 are implemented; Goals 11–12 are written specifications, not yet built. Every
+Goals 01–11 are implemented; Goal 12 is a written specification, not yet built. Every
 implemented goal reuses the same lifecycle, gates, evaluator, and memory schema — only what
 fills the roles changes, by **config not code**, as the tier rises. Each entry below names
 its goal, the modules/artifacts it added, and what it does.
@@ -125,9 +125,17 @@ its goal, the modules/artifacts it added, and what it does.
   escalate). Approvals are single-use or standing, expiring, and revocable; `approve` /
   `deny` / `revoke` are human-only CLI verbs — no agent tool grants approval. Enabled only at
   Tier ≥ 2 by config; lowering the tier disables the capability with no code change.
-- **Goal 11 — Governed compute scale-up** *(spec, not yet implemented)*: larger compute /
-  longer experiments under governance — compute budget tiers, checkpointing, plane isolation
-  unchanged at scale.
+- **Goal 11 — Governed compute scale-up** (`scale`, `sandbox.run_guarded`): larger compute /
+  longer experiments under governance. Compute budget tiers (`ComputeBudget` = a hard
+  wall-clock + memory ceiling); a `ComputeAllocator` grants a tier only with **both** a
+  recorded pass at the next-smaller tier (promotion-before-budget) **and** a Goal 10 approval
+  bound to the exact `(experiment, tier)` — otherwise it refuses/escalates. The execution
+  plane's ceilings are enforced by `Sandbox.run_guarded`: a hard wall-clock deadline plus a
+  `ps`-based memory monitor that kills the process group on breach; a breach halts and
+  escalates (`BudgetExceeded`) and is recorded as a negative attempt, leaving the archive
+  consistent. `CheckpointStore` writes atomic per-experiment checkpoints so a halt loses no
+  work and resumes. Plane isolation is unchanged at scale (offline, credential-free). CLI:
+  `run-scaled --compute-tier`.
 - **Goal 12 — Governed model-training** *(spec, not yet implemented)*: weight-update
   experiments behind governance + a stability precondition; trained weights are artifacts with
   lineage, never auto-deployed.
@@ -148,6 +156,7 @@ uv run siro summarize-research                        # per-family suite summary
 uv run siro propose-meta-change runs/attempts.jsonl   # meta-research outer loop (Goal 05)
 uv run siro request-approval budget_increase --target max_usd_per_run --payload '{"max_usd_per_run":20}'  # Tier 2 governance request (Goal 10)
 uv run siro approve <request_id> --by <human>         # human-only grant; list-approvals/deny/revoke too (Goal 10)
+uv run siro run-scaled --compute-tier 1               # eval under a governed compute budget (Goal 11)
 ```
 
 ## Suggested use

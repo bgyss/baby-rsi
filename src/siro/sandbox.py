@@ -13,6 +13,7 @@ the tests, so it cannot weaken or delete them.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -120,6 +121,129 @@ class ResearchRun:
             and "primary" in self.metrics
             and "error" not in self.metrics
         )
+
+
+@dataclass(frozen=True)
+class GuardedRun:
+    """Output of one *resource-guarded* sandboxed evaluation (Goal 11).
+
+    Like :class:`ResearchRun`, but executed under an explicit compute budget — a hard
+    wall-clock deadline *and* a memory ceiling enforced by a controller-side monitor that
+    kills the process group on breach. ``timed_out`` / ``memory_exceeded`` mark a ceiling
+    breach (which the caller turns into a halt-and-escalate); ``peak_memory_mb`` is the
+    observed peak for audit.
+    """
+
+    metrics: dict = field(default_factory=dict)
+    runtime_ms: float = 0.0
+    timed_out: bool = False
+    memory_exceeded: bool = False
+    peak_memory_mb: float = 0.0
+    error: str = ""
+
+    @property
+    def ran(self) -> bool:
+        return (
+            not self.timed_out
+            and not self.memory_exceeded
+            and not self.error
+            and "primary" in self.metrics
+            and "error" not in self.metrics
+        )
+
+
+def _rss_mb(pid: int) -> float | None:
+    """Resident set size of ``pid`` in MB via ``ps`` (portable across macOS/Linux), or None.
+
+    ``ps -o rss=`` reports KB on both platforms. Used by the memory monitor so the ceiling
+    is enforced even where ``setrlimit(RLIMIT_AS)`` is a no-op (macOS).
+    """
+    try:
+        out = subprocess.run(
+            ["ps", "-o", "rss=", "-p", str(pid)], capture_output=True, text=True, timeout=2
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    raw = out.stdout.strip()
+    if not raw:
+        return None
+    try:
+        return int(raw.split()[0]) / 1024.0
+    except (ValueError, IndexError):
+        return None
+
+
+def _kill_process_group(proc: "subprocess.Popen") -> None:
+    """Hard-kill a child and its process group (started with ``start_new_session=True``)."""
+    try:
+        os.killpg(os.getpgid(proc.pid), 9)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            proc.kill()
+        except OSError:
+            pass
+
+
+@dataclass
+class _GuardedExec:
+    returncode: int
+    stdout: str
+    stderr: str
+    timed_out: bool
+    memory_exceeded: bool
+    peak_memory_mb: float
+
+
+def _run_guarded_subprocess(
+    cmd: list[str],
+    *,
+    cwd: Path,
+    env: dict,
+    wall_clock_seconds: float,
+    memory_mb: int | None,
+    poll_interval: float = 0.05,
+) -> _GuardedExec:
+    """Run ``cmd`` under a hard wall-clock deadline and an optional memory ceiling.
+
+    The child runs in its own session/process group so a breach kills the whole group, not
+    just the leader. The wall-clock deadline is always enforced; the memory ceiling is
+    enforced by polling the child's RSS (``ps``) and killing on breach.
+    """
+    deadline = time.perf_counter() + wall_clock_seconds
+    # start_new_session=True ⇒ the child leads a new process group we can kill wholesale.
+    proc = subprocess.Popen(  # noqa: S603 - fixed controller-built command
+        cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        start_new_session=True,
+    )
+    peak_mb = 0.0
+    timed_out = False
+    memory_exceeded = False
+    while True:
+        if proc.poll() is not None:
+            break
+        now = time.perf_counter()
+        if now >= deadline:
+            timed_out = True
+            break
+        if memory_mb is not None:
+            rss = _rss_mb(proc.pid)
+            if rss is not None:
+                peak_mb = max(peak_mb, rss)
+                if rss > memory_mb:
+                    memory_exceeded = True
+                    break
+        time.sleep(poll_interval)
+
+    if timed_out or memory_exceeded:
+        _kill_process_group(proc)
+        try:
+            out, err = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            out, err = "", ""
+        return _GuardedExec(-1, out or "", err or "", timed_out, memory_exceeded, peak_mb)
+
+    out, err = proc.communicate()
+    return _GuardedExec(proc.returncode, out or "", err or "", False, False, peak_mb)
 
 
 def _truncate(text: str, limit: int) -> str:
@@ -410,5 +534,109 @@ class Sandbox:
                 return ResearchRun(runtime_ms=runtime_ms, metrics=metrics, error=str(metrics["error"]))
             return ResearchRun(metrics=metrics, runtime_ms=runtime_ms)
 
+    def run_guarded(
+        self,
+        eval_path,  # noqa: ANN001 - Path to the controller-owned eval.py
+        files: dict,
+        *,
+        wall_clock_seconds: float,
+        memory_mb: int | None = None,
+        hidden_payload: str | None = None,
+    ) -> GuardedRun:
+        """Run a research ``eval.py`` under an explicit compute budget (Goal 11).
 
-__all__ = ["SandboxConfig", "SandboxResult", "TrainingRun", "ResearchRun", "Sandbox"]
+        Same execution-plane contract as :meth:`run_research` — offline, credential-scrubbed
+        env, network-blocking ``sitecustomize``, held-out data outside the candidate cwd via
+        ``SIRO_HIDDEN_PATH`` — but the run is bounded by a hard ``wall_clock_seconds`` deadline
+        and an optional ``memory_mb`` ceiling enforced by a controller-side monitor that kills
+        the process group on breach. Larger compute never relaxes plane isolation.
+        """
+        script = Path(eval_path)
+        env = self.child_env()
+        assert_execution_plane_isolated(env)
+
+        with TemporaryDirectory(prefix="siro-scaled-") as tmp, TemporaryDirectory(
+            prefix="siro-hidden-"
+        ) as hidden_tmp:
+            tmpdir = Path(tmp)
+            run_script = tmpdir / "eval.py"
+            shutil.copyfile(script, run_script)
+            (tmpdir / "sitecustomize.py").write_text(_SITECUSTOMIZE, encoding="utf-8")
+            for name, content in files.items():
+                (tmpdir / name).write_text(content, encoding="utf-8")
+            (tmpdir / "_budget.json").write_text(
+                json.dumps({"budget_seconds": wall_clock_seconds}), encoding="utf-8"
+            )
+            env["PYTHONPATH"] = str(tmpdir)
+            if hidden_payload is not None:
+                hidden_path = Path(hidden_tmp) / "hidden.json"
+                hidden_path.write_text(hidden_payload, encoding="utf-8")
+                env["SIRO_HIDDEN_PATH"] = str(hidden_path)
+
+            cmd = [sys.executable, str(run_script)]
+            start = time.perf_counter()
+            result = _run_guarded_subprocess(
+                cmd,
+                cwd=tmpdir,
+                env=env,
+                wall_clock_seconds=wall_clock_seconds,
+                memory_mb=memory_mb,
+            )
+            runtime_ms = (time.perf_counter() - start) * 1000.0
+
+            if result.timed_out:
+                return GuardedRun(
+                    runtime_ms=runtime_ms,
+                    timed_out=True,
+                    peak_memory_mb=result.peak_memory_mb,
+                    error=f"evaluation exceeded the {wall_clock_seconds:g}s wall-clock ceiling",
+                )
+            if result.memory_exceeded:
+                return GuardedRun(
+                    runtime_ms=runtime_ms,
+                    memory_exceeded=True,
+                    peak_memory_mb=result.peak_memory_mb,
+                    error=f"evaluation exceeded the {memory_mb}MB memory ceiling "
+                    f"(peak {result.peak_memory_mb:.0f}MB)",
+                )
+            if result.returncode != 0:
+                return GuardedRun(
+                    runtime_ms=runtime_ms,
+                    peak_memory_mb=result.peak_memory_mb,
+                    error=_truncate(result.stderr or "eval.py failed", self.config.max_output_bytes),
+                )
+            line = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
+            try:
+                metrics = json.loads(line)
+            except (json.JSONDecodeError, IndexError):
+                return GuardedRun(
+                    runtime_ms=runtime_ms,
+                    peak_memory_mb=result.peak_memory_mb,
+                    error="eval.py produced no parseable metric record",
+                )
+            if not isinstance(metrics, dict):
+                return GuardedRun(
+                    runtime_ms=runtime_ms,
+                    peak_memory_mb=result.peak_memory_mb,
+                    error="eval.py metric record was not a JSON object",
+                )
+            if "error" in metrics:
+                return GuardedRun(
+                    runtime_ms=runtime_ms,
+                    metrics=metrics,
+                    peak_memory_mb=result.peak_memory_mb,
+                    error=str(metrics["error"]),
+                )
+            return GuardedRun(
+                metrics=metrics, runtime_ms=runtime_ms, peak_memory_mb=result.peak_memory_mb
+            )
+
+
+__all__ = [
+    "SandboxConfig",
+    "SandboxResult",
+    "TrainingRun",
+    "ResearchRun",
+    "GuardedRun",
+    "Sandbox",
+]

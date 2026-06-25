@@ -8,6 +8,7 @@ cycle uses:
 - ``run-training``        — run the tiny-training improvement loop (Goal 06).
 - ``run-org``             — run one full frontier-org research cycle (Goal 08).
 - ``run-research``        — run the org on research-shaped task(s) (Goal 09).
+- ``run-scaled``          — run an eval under a governed compute budget (Goal 11).
 - ``summarize-runs``      — reflect on the archive (real: counts + pass rate + best).
 - ``summarize-research``  — per-family summary of the research suite (Goal 09).
 - ``propose-meta-change`` — propose a process change (Goal 05).
@@ -30,7 +31,12 @@ from .archive import JSONLArchive, ModelCallLedger
 from .budget import BudgetExceeded, BudgetTracker
 from .config import DEFAULT_CONFIG_PATH, load_config
 from .controller import Controller, select_best
-from .governance import DEFAULT_APPROVALS_PATH, ApprovalLedger, GovernanceGate
+from .governance import (
+    DEFAULT_APPROVALS_PATH,
+    ApprovalLedger,
+    GovernanceDenied,
+    GovernanceGate,
+)
 from .memory import ResearchMemory, failure_signature
 from .meta import MetaChangeStore, MetaResearcher
 from .model_client import LocalOpenAIClient
@@ -41,7 +47,15 @@ from .research import (
     DEFAULT_RESEARCH_TASKS_DIR,
     ResearchArchive,
     discover_research_tasks,
+    load_research_task,
     summarize_research,
+)
+from .scale import (
+    DEFAULT_CHECKPOINT_DIR,
+    CheckpointStore,
+    ComputeAllocationError,
+    ScaledRunner,
+    compute_tiers_from_config,
 )
 from .schemas import (
     ApprovalScope,
@@ -463,6 +477,61 @@ def _cmd_revoke(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- governed compute scale-up (Tier 2, Goal 11) --------------------------- #
+
+
+def _cmd_run_scaled(args: argparse.Namespace) -> int:
+    """Run a research eval under a governed compute budget (Goal 11).
+
+    The default compute tier is free; a larger tier requires both a recorded pass at the
+    smaller tier (promotion-before-budget) and a human-approved governance request (Goal 10).
+    A wall-clock or memory ceiling breach halts and escalates. Lowering the tier is config-only.
+    """
+    config = load_config(args.config)
+    gate = GovernanceGate.from_config(config)
+    runner = ScaledRunner(
+        gate,
+        archive=ResearchArchive(args.archive),
+        checkpoints=CheckpointStore(args.checkpoints),
+        tiers=compute_tiers_from_config(config),
+    )
+    task = load_research_task(args.task_dir)
+    candidate = args.candidate.read_text(encoding="utf-8") if args.candidate else task.surface_code
+    experiment_id = args.experiment_id or task.task_id
+    print(f"config: tier {config.tier} ({args.config}); governance "
+          f"{'on' if gate.enabled else 'off (compute tier > 0 needs Tier 2)'}")
+    print(f"run-scaled: {task.task_id}  compute-tier={args.compute_tier}  experiment={experiment_id}")
+    try:
+        result = runner.run(
+            task,
+            candidate,
+            compute_tier=args.compute_tier,
+            experiment_id=experiment_id,
+            actor=args.actor,
+            rationale=args.rationale,
+        )
+    except ComputeAllocationError as exc:
+        print(f"BLOCKED — {exc}")
+        print("Pass the smaller compute tier first (promotion-before-budget), then retry.")
+        return 2
+    except GovernanceDenied as exc:
+        print(f"BLOCKED — compute tier {args.compute_tier} needs human approval "
+              f"(request {exc.request.request_id}).")
+        print(f"Approve with: siro approve {exc.request.request_id} --by <human>")
+        return 2
+    except BudgetExceeded as exc:
+        print(f"HALTED — compute ceiling breached ({exc.kind}): {exc} "
+              f"(limit {exc.limit:g}, observed {exc.observed:g})")
+        print("Escalation required: a human must approve a larger compute tier (governed).")
+        return 2
+
+    m = result.metric
+    print(f"  budget: wall_clock={result.budget.wall_clock_seconds:g}s memory={result.budget.memory_mb}MB")
+    print(f"  metric: {m.primary_name}={m.primary:g} passed={m.passed} peak_mem={result.peak_memory_mb:.0f}MB")
+    print(f"  {result.attempt.status.value} — archived to {args.archive}; checkpoint in {args.checkpoints}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="siro",
@@ -704,6 +773,50 @@ def build_parser() -> argparse.ArgumentParser:
     p_rev.add_argument("--reason", default="", help="Why it was revoked.")
     p_rev.add_argument("--ledger", type=Path, default=DEFAULT_APPROVALS_PATH)
     p_rev.set_defaults(func=_cmd_revoke)
+
+    # --- governed compute scale-up (Tier 2, Goal 11) -----------------------
+    p_scaled = sub.add_parser(
+        "run-scaled",
+        help="Run a research eval under a governed compute budget (Goal 11).",
+    )
+    p_scaled.add_argument(
+        "task_dir",
+        type=Path,
+        nargs="?",
+        default=Path("tasks/research/training/tiny_mlp"),
+        help="Research task dir (default: tasks/research/training/tiny_mlp).",
+    )
+    p_scaled.add_argument(
+        "--compute-tier", type=int, default=0, help="Compute tier (0 = free; higher = governed)."
+    )
+    p_scaled.add_argument(
+        "--candidate",
+        type=Path,
+        default=None,
+        help="Candidate edit-surface file (default: the task baseline).",
+    )
+    p_scaled.add_argument("--experiment-id", default=None, help="Lineage key (default: task id).")
+    p_scaled.add_argument("--actor", default="operator", help="Who requested the scale-up.")
+    p_scaled.add_argument("--rationale", default="", help="Why the larger budget is needed.")
+    p_scaled.add_argument(
+        "--config",
+        type=Path,
+        default=Path("config/tier2.governed.yaml"),
+        help="Tier/provider config (default: config/tier2.governed.yaml).",
+    )
+    p_scaled.add_argument(
+        "--archive",
+        type=Path,
+        default=DEFAULT_RESEARCH_ATTEMPTS_PATH,
+        help=f"Research-attempts archive (default: {DEFAULT_RESEARCH_ATTEMPTS_PATH}).",
+    )
+    p_scaled.add_argument(
+        "--checkpoints",
+        type=Path,
+        default=DEFAULT_CHECKPOINT_DIR,
+        help=f"Checkpoint directory (default: {DEFAULT_CHECKPOINT_DIR}).",
+    )
+    p_scaled.set_defaults(func=_cmd_run_scaled)
 
     p_sum = sub.add_parser("summarize-runs", help="Summarize an attempts archive.")
     p_sum.add_argument(

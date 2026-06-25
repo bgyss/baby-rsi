@@ -133,3 +133,47 @@ def test_control_plane_egress_is_allowlisted_only():
     assert_allowed("https://api.anthropic.com/v1/messages", allow)
     with pytest.raises(PermissionError):
         assert_allowed("https://evil.example.com/v1", allow)
+
+
+# --- Goal 11: plane isolation holds for the scaled (guarded) execution path ---
+
+
+def test_scaled_run_is_offline_and_credential_free(tmp_path, monkeypatch):
+    """Larger compute never relaxes isolation: run_guarded stays offline + credential-free."""
+    import json as _json
+
+    from siro.governance import ApprovalLedger, GovernanceGate
+    from siro.research import ResearchArchive, load_research_task
+    from siro.scale import CheckpointStore, ScaledRunner
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "secret")
+    monkeypatch.setenv("OPENAI_API_KEY", "secret")
+
+    # A guarded eval that reports whether a credential or a live socket leaked into the
+    # execution plane. Both must be absent even under a (larger) compute budget.
+    probe = (
+        "import os, socket, json\n"
+        "leaked = [k for k in ('ANTHROPIC_API_KEY', 'OPENAI_API_KEY') if k in os.environ]\n"
+        "try:\n"
+        "    socket.socket().connect(('10.255.255.1', 80)); net = 'open'\n"
+        "except OSError:\n"
+        "    net = 'blocked'\n"
+        "print(json.dumps({'primary': 1.0, 'passed': not leaked and net == 'blocked'}))\n"
+    )
+    d = tmp_path / "tasks" / "probe"
+    (d / "baseline").mkdir(parents=True)
+    (d / "task.json").write_text(
+        _json.dumps({"family": "probe", "edit_surface": "noop.py", "primary_metric": "m"}),
+        encoding="utf-8",
+    )
+    (d / "brief.md").write_text("# probe\n", encoding="utf-8")
+    (d / "baseline" / "noop.py").write_text("X = 1\n", encoding="utf-8")
+    (d / "eval.py").write_text(probe, encoding="utf-8")
+
+    runner = ScaledRunner(
+        GovernanceGate(ApprovalLedger(tmp_path / "approvals.jsonl")),
+        archive=ResearchArchive(tmp_path / "r.jsonl"),
+        checkpoints=CheckpointStore(tmp_path / "ckpt"),
+    )
+    result = runner.run(load_research_task(d), "", compute_tier=0, experiment_id="probe")
+    assert result.metric.passed  # no credential leaked, no socket opened — offline at scale
