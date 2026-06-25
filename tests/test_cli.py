@@ -1,9 +1,13 @@
 """The CLI surface exists: --help, --version, and the documented subcommands run."""
 
+import json
+import re
+
 import pytest
 
 from siro.archive import JSONLArchive
 from siro.cli import build_parser, main
+from siro.model_training import ModelRegistry
 from siro.schemas import Attempt, AttemptStatus, Candidate, EvaluationResult
 
 
@@ -90,3 +94,114 @@ def test_propose_meta_change_records_proposal(tmp_path, capsys):
     assert "human-gated" in out
     # The proposal is recorded in the separate meta-change archive.
     assert store_path.exists()
+
+
+def test_tier2_model_training_smoke_path_uses_separate_train_and_deploy_approvals(
+    tmp_path, capsys
+):
+    """Cheap end-to-end Tier 2 smoke through the public CLI entrypoints."""
+
+    approvals = tmp_path / "approvals.jsonl"
+    config = tmp_path / "tier2.governed.yaml"
+    config.write_text(
+        f"""
+tier: 2
+governance:
+  enabled: true
+  approvals_path: {approvals}
+""",
+        encoding="utf-8",
+    )
+    archive = tmp_path / "model_artifacts.jsonl"
+    store = tmp_path / "artifacts"
+    registry_path = tmp_path / "model_registry.jsonl"
+    experiment_id = "tier2-smoke"
+
+    train_payload = {
+        "train_config": {"learning_rate": 0.1, "epochs": 300},
+        "compute_tier": 0,
+    }
+    assert main([
+        "request-approval",
+        "model_train",
+        "--target",
+        f"train:{experiment_id}",
+        "--payload",
+        json.dumps(train_payload),
+        "--ledger",
+        str(approvals),
+    ]) == 0
+    train_request = re.search(r"request ([0-9a-f]{12})", capsys.readouterr().out).group(1)
+
+    assert main(["approve", train_request, "--by", "alice", "--ledger", str(approvals)]) == 0
+    capsys.readouterr()
+
+    assert main([
+        "train-model",
+        experiment_id,
+        "--config",
+        str(config),
+        "--archive",
+        str(archive),
+        "--store",
+        str(store),
+    ]) == 0
+    train_out = capsys.readouterr().out
+    artifact_id = re.search(r"trained artifact ([0-9a-f]{12})", train_out).group(1)
+    assert "NOT deployed" in train_out
+    assert ModelRegistry(registry_path).is_deployed(artifact_id, "implementation") is False
+
+    assert main([
+        "deploy-model",
+        artifact_id,
+        "implementation",
+        "--implementation-provider",
+        "anthropic",
+        "--reviewer-provider",
+        "openai",
+        "--config",
+        str(config),
+        "--store",
+        str(store),
+        "--registry",
+        str(registry_path),
+    ]) == 2
+    deploy_denied = capsys.readouterr().out
+    assert "needs human approval" in deploy_denied
+    assert ModelRegistry(registry_path).is_deployed(artifact_id, "implementation") is False
+
+    deploy_payload = {"artifact_id": artifact_id, "role": "implementation"}
+    assert main([
+        "request-approval",
+        "model_deploy",
+        "--target",
+        "deploy:implementation",
+        "--payload",
+        json.dumps(deploy_payload),
+        "--ledger",
+        str(approvals),
+    ]) == 0
+    deploy_request = re.search(r"request ([0-9a-f]{12})", capsys.readouterr().out).group(1)
+
+    assert main(["approve", deploy_request, "--by", "alice", "--ledger", str(approvals)]) == 0
+    capsys.readouterr()
+
+    assert main([
+        "deploy-model",
+        artifact_id,
+        "implementation",
+        "--implementation-provider",
+        "anthropic",
+        "--reviewer-provider",
+        "openai",
+        "--config",
+        str(config),
+        "--store",
+        str(store),
+        "--registry",
+        str(registry_path),
+    ]) == 0
+    deploy_out = capsys.readouterr().out
+    assert "DEPLOYED" in deploy_out
+    assert "reviewer openai" in deploy_out
+    assert ModelRegistry(registry_path).is_deployed(artifact_id, "implementation") is True

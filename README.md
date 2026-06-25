@@ -203,6 +203,7 @@ uv run siro approve <request_id> --by <human>         # human-only grant; list-a
 uv run siro run-scaled --compute-tier 1               # eval under a governed compute budget (Goal 11)
 uv run siro train-model exp1                          # governed weight-update experiment (Goal 12)
 uv run siro deploy-model <artifact_id> implementation --implementation-provider anthropic --reviewer-provider openai  # gated deploy (Goal 12)
+uv run pytest tests/test_cli.py::test_tier2_model_training_smoke_path_uses_separate_train_and_deploy_approvals  # cheap Tier 2 approval/deploy smoke
 ```
 
 ## Suggested use
