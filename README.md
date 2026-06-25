@@ -58,7 +58,7 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goals 01–09 are implemented; Goals 10–12 are written specifications, not yet built. Every
+Goals 01–10 are implemented; Goals 11–12 are written specifications, not yet built. Every
 implemented goal reuses the same lifecycle, gates, evaluator, and memory schema — only what
 fills the roles changes, by **config not code**, as the tier rises. Each entry below names
 its goal, the modules/artifacts it added, and what it does.
@@ -113,14 +113,24 @@ its goal, the modules/artifacts it added, and what it does.
   `summarize-research` reports per-family pass rate, median cycles to success, safety-gate
   failures, token/USD spend, and strategy diversity.
 
-### Tier 2 — governed scale-up (Goals 10–12) — specified, not yet implemented
+### Tier 2 — governed scale-up (Goals 10–12)
 
-- **Goal 10 — Governance gate**: a default-deny human-approval workflow (`GovernanceGate`
-  + approval ledger) that makes the self-improvement bounds an enforced, auditable artifact.
-- **Goal 11 — Governed compute scale-up**: larger compute / longer experiments under
-  governance — compute budget tiers, checkpointing, plane isolation unchanged at scale.
-- **Goal 12 — Governed model-training**: weight-update experiments behind governance + a
-  stability precondition; trained weights are artifacts with lineage, never auto-deployed.
+- **Goal 10 — Governance gate** (`governance`, `config/tier2.governed.yaml`): the Tier 2
+  human-approval workflow that makes the self-improvement bounds an enforced, auditable
+  artifact. A default-deny `GovernanceGate` over an append-only `runs/approvals.jsonl` ledger
+  of typed `ApprovalRequest`/`ApprovalDecision`/`ApprovalRevocation` records. A governed
+  action (the bounds of `docs/13` — budget/tier/evaluator/egress/permission/deploy changes)
+  proceeds only with a recorded, human-issued approval **bound to the exact change by content
+  hash**; absent one it records a pending request and raises `GovernanceDenied` (halt +
+  escalate). Approvals are single-use or standing, expiring, and revocable; `approve` /
+  `deny` / `revoke` are human-only CLI verbs — no agent tool grants approval. Enabled only at
+  Tier ≥ 2 by config; lowering the tier disables the capability with no code change.
+- **Goal 11 — Governed compute scale-up** *(spec, not yet implemented)*: larger compute /
+  longer experiments under governance — compute budget tiers, checkpointing, plane isolation
+  unchanged at scale.
+- **Goal 12 — Governed model-training** *(spec, not yet implemented)*: weight-update
+  experiments behind governance + a stability precondition; trained weights are artifacts with
+  lineage, never auto-deployed.
 
 The canonical interface is `uv run siro` (mise tasks are thin wrappers):
 
@@ -136,6 +146,8 @@ uv run siro run-research                              # org runs every research-
 uv run siro run-research tasks/research/training/tiny_mlp --config config/tier0.local.yaml  # one family, fully local
 uv run siro summarize-research                        # per-family suite summary (Goal 09)
 uv run siro propose-meta-change runs/attempts.jsonl   # meta-research outer loop (Goal 05)
+uv run siro request-approval budget_increase --target max_usd_per_run --payload '{"max_usd_per_run":20}'  # Tier 2 governance request (Goal 10)
+uv run siro approve <request_id> --by <human>         # human-only grant; list-approvals/deny/revoke too (Goal 10)
 ```
 
 ## Suggested use

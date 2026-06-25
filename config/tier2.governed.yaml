@@ -1,0 +1,69 @@
+# Tier 2 — governed scale-up. Every capability beyond Tier 1 (larger compute, longer
+# experiments, model-training, deploying a trained model) is gated by an explicit
+# human-approved governance gate. See docs/07_model_providers_and_tiers.md and
+# docs/goal_prompts/goal_10_governance_gate.md.
+#
+# Selecting or lowering a tier is config-only, never a code change: drop `tier` back to 1
+# or 0 and the governed capabilities are simply not offered (with no approvals on record,
+# everything default-denies — a lower tier is always safe).
+tier: 2
+
+providers:
+  local:
+    backend: llamacpp
+    base_url: http://127.0.0.1:2276/v1
+    name: unsloth/Qwen3.6-27B-GGUF:Q8_0
+    timeout_seconds: 120
+  anthropic:
+    backend: anthropic
+    name: claude-opus-4-8
+    api_key_env: ANTHROPIC_API_KEY
+    timeout_seconds: 120
+  openai:
+    backend: openai
+    name: gpt-5.4
+    api_key_env: OPENAI_API_KEY
+    timeout_seconds: 120
+
+agent_models:
+  hypothesis: anthropic
+  literature: anthropic
+  implementation: anthropic
+  evaluation: local
+  safety: openai                             # cross-model reviewer, distinct from implementer
+  interpretation: anthropic
+  memory: anthropic
+  meta_research: anthropic
+
+sandbox:
+  timeout_seconds: 10
+  network: disabled                          # execution plane is always offline, at every tier
+  max_attempts_per_task: 20
+
+evaluation:
+  primary_metric: pytest_pass_rate
+  require_reproducibility: true
+
+budget:
+  max_usd_per_run: 5.00
+  max_usd_per_day: 50.00
+  max_tokens_per_call: 8000
+
+# Tier 2 governance gate (Goal 10). The governed-action set is the bounds of
+# docs/13_self_improvement_loop.md; a governed action proceeds only with a recorded,
+# human-issued, hash-bound, unexpired approval. Agents may request, never approve.
+governance:
+  enabled: true
+  approvals_path: runs/approvals.jsonl
+
+safety:
+  allow_network: true                        # control-plane egress (allowlisted only)
+  allow_package_install: false
+  allow_evaluator_edits: false
+
+network:
+  egress: allowlist
+  allowed_endpoints:
+    - api.anthropic.com
+    - api.openai.com
+    - 127.0.0.1:2276

@@ -11,6 +11,9 @@ cycle uses:
 - ``summarize-runs``      — reflect on the archive (real: counts + pass rate + best).
 - ``summarize-research``  — per-family summary of the research suite (Goal 09).
 - ``propose-meta-change`` — propose a process change (Goal 05).
+- ``request-approval`` / ``list-approvals`` / ``approve`` / ``deny`` / ``revoke``
+                          — the Tier 2 governance workflow (Goal 10); ``approve``/``deny``/
+                            ``revoke`` are human-only — no agent can grant approval.
 
 Uses only the standard library ``argparse`` to keep Tier 0 dependency-light.
 """
@@ -18,6 +21,7 @@ Uses only the standard library ``argparse`` to keep Tier 0 dependency-light.
 from __future__ import annotations
 
 import argparse
+import json
 from collections import Counter
 from pathlib import Path
 
@@ -26,6 +30,7 @@ from .archive import JSONLArchive, ModelCallLedger
 from .budget import BudgetExceeded, BudgetTracker
 from .config import DEFAULT_CONFIG_PATH, load_config
 from .controller import Controller, select_best
+from .governance import DEFAULT_APPROVALS_PATH, ApprovalLedger, GovernanceGate
 from .memory import ResearchMemory, failure_signature
 from .meta import MetaChangeStore, MetaResearcher
 from .model_client import LocalOpenAIClient
@@ -38,7 +43,12 @@ from .research import (
     discover_research_tasks,
     summarize_research,
 )
-from .schemas import MetaChangeRecord, MetaRecommendation
+from .schemas import (
+    ApprovalScope,
+    GovernedAction,
+    MetaChangeRecord,
+    MetaRecommendation,
+)
 from .training import (
     DEFAULT_BUDGET_SECONDS,
     DEFAULT_TRAINING_ATTEMPTS_PATH,
@@ -365,6 +375,94 @@ def _cmd_propose_meta_change(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- governance (Tier 2, Goal 10) ------------------------------------------ #
+
+
+def _expires_at(seconds: float | None):
+    """Absolute UTC expiry from a relative ``--expires-in`` (seconds), or ``None``."""
+    if seconds is None:
+        return None
+    from datetime import timedelta
+
+    from .schemas import _utcnow
+
+    return _utcnow() + timedelta(seconds=seconds)
+
+
+def _cmd_request_approval(args: argparse.Namespace) -> int:
+    """Record a pending governance request (an escalation). Human-operated; never an agent."""
+    gate = GovernanceGate(ApprovalLedger(args.ledger))
+    payload = json.loads(args.payload) if args.payload else None
+    req = gate.request(
+        GovernedAction(args.action),
+        args.target,
+        actor=args.actor,
+        rationale=args.rationale,
+        payload=payload,
+        scope=ApprovalScope(args.scope),
+        expires_at=_expires_at(args.expires_in),
+    )
+    print(f"requested {req.action.value} (request {req.request_id})")
+    print(f"  target:  {req.target or '(none)'}")
+    print(f"  hash:    {req.content_hash}")
+    print(f"  scope:   {req.scope.value}  expires: {req.expires_at or 'never'}")
+    print(f"A human must approve: siro approve {req.request_id} --by <human>")
+    print(f"Recorded to {args.ledger}.")
+    return 0
+
+
+def _cmd_list_approvals(args: argparse.Namespace) -> int:
+    gate = GovernanceGate(ApprovalLedger(args.ledger))
+    requests = gate.ledger.requests()
+    if not requests:
+        print(f"No approval requests in {args.ledger}.")
+        return 0
+    print(f"Approval requests in {args.ledger}:")
+    for req in requests:
+        status = gate.status_of(req.request_id)
+        if args.status and status != args.status:
+            continue
+        print(
+            f"  {req.request_id}  {status:<8} {req.action.value:<26} "
+            f"target={req.target or '-'}  by={req.actor or '-'}"
+        )
+    return 0
+
+
+def _cmd_approve(args: argparse.Namespace) -> int:
+    gate = GovernanceGate(ApprovalLedger(args.ledger))
+    try:
+        decision = gate.approve(args.request_id, by=args.by, expires_at=_expires_at(args.expires_in))
+    except (KeyError, ValueError) as exc:
+        print(f"cannot approve: {exc}")
+        return 2
+    print(f"APPROVED {decision.action.value} (request {decision.request_id}) by {decision.approver}")
+    print(f"  decision {decision.decision_id}  scope={decision.scope.value}  "
+          f"expires: {decision.expires_at or 'never'}")
+    print(f"Recorded to {args.ledger}.")
+    return 0
+
+
+def _cmd_deny(args: argparse.Namespace) -> int:
+    gate = GovernanceGate(ApprovalLedger(args.ledger))
+    try:
+        decision = gate.deny(args.request_id, by=args.by, reason=args.reason)
+    except (KeyError, ValueError) as exc:
+        print(f"cannot deny: {exc}")
+        return 2
+    print(f"DENIED {decision.action.value} (request {decision.request_id}) by {decision.approver}")
+    print(f"Recorded to {args.ledger}.")
+    return 0
+
+
+def _cmd_revoke(args: argparse.Namespace) -> int:
+    gate = GovernanceGate(ApprovalLedger(args.ledger))
+    rv = gate.revoke(args.decision_id, by=args.by, reason=args.reason)
+    print(f"REVOKED decision {rv.decision_id} by {rv.by or '(unknown)'}")
+    print(f"Recorded to {args.ledger}.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="siro",
@@ -553,6 +651,59 @@ def build_parser() -> argparse.ArgumentParser:
         help="Model-call audit ledger, for per-family spend (default: runs/model_calls.jsonl).",
     )
     p_sumr.set_defaults(func=_cmd_summarize_research)
+
+    # --- governance (Tier 2, Goal 10) --------------------------------------
+    action_choices = [a.value for a in GovernedAction]
+    scope_choices = [s.value for s in ApprovalScope]
+
+    p_req = sub.add_parser(
+        "request-approval",
+        help="Record a pending governance request for a governed action (Goal 10).",
+    )
+    p_req.add_argument("action", choices=action_choices, help="The governed action kind.")
+    p_req.add_argument("--target", default="", help="What the action applies to.")
+    p_req.add_argument("--actor", default="", help="Who/what raised it (an agent or operator).")
+    p_req.add_argument("--rationale", default="", help="Why it is requested.")
+    p_req.add_argument(
+        "--payload",
+        default="",
+        help="JSON describing the exact change (binds the approval to it via content hash).",
+    )
+    p_req.add_argument("--scope", choices=scope_choices, default=ApprovalScope.ONCE.value)
+    p_req.add_argument("--expires-in", type=float, default=None, help="Expiry in seconds.")
+    p_req.add_argument("--ledger", type=Path, default=DEFAULT_APPROVALS_PATH)
+    p_req.set_defaults(func=_cmd_request_approval)
+
+    p_list = sub.add_parser("list-approvals", help="List governance requests + status (Goal 10).")
+    p_list.add_argument("--ledger", type=Path, default=DEFAULT_APPROVALS_PATH)
+    p_list.add_argument(
+        "--status",
+        default=None,
+        choices=["pending", "granted", "denied", "expired", "revoked"],
+        help="Only show requests in this resolved status.",
+    )
+    p_list.set_defaults(func=_cmd_list_approvals)
+
+    p_appr = sub.add_parser("approve", help="Approve a pending governance request (human-only).")
+    p_appr.add_argument("request_id", help="The request id to approve.")
+    p_appr.add_argument("--by", required=True, help="Human approver id (required).")
+    p_appr.add_argument("--expires-in", type=float, default=None, help="Expiry in seconds.")
+    p_appr.add_argument("--ledger", type=Path, default=DEFAULT_APPROVALS_PATH)
+    p_appr.set_defaults(func=_cmd_approve)
+
+    p_deny = sub.add_parser("deny", help="Deny a pending governance request (human-only).")
+    p_deny.add_argument("request_id", help="The request id to deny.")
+    p_deny.add_argument("--by", required=True, help="Human id (required).")
+    p_deny.add_argument("--reason", default="", help="Why it was denied.")
+    p_deny.add_argument("--ledger", type=Path, default=DEFAULT_APPROVALS_PATH)
+    p_deny.set_defaults(func=_cmd_deny)
+
+    p_rev = sub.add_parser("revoke", help="Revoke a granted governance decision (human-only).")
+    p_rev.add_argument("decision_id", help="The decision id to revoke.")
+    p_rev.add_argument("--by", required=True, help="Human id (required).")
+    p_rev.add_argument("--reason", default="", help="Why it was revoked.")
+    p_rev.add_argument("--ledger", type=Path, default=DEFAULT_APPROVALS_PATH)
+    p_rev.set_defaults(func=_cmd_revoke)
 
     p_sum = sub.add_parser("summarize-runs", help="Summarize an attempts archive.")
     p_sum.add_argument(

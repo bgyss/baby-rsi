@@ -412,11 +412,103 @@ class ModelCall(BaseModel):
     created_at: datetime = Field(default_factory=_utcnow)
 
 
+class GovernedAction(str, Enum):
+    """A capability escalation that may not happen without explicit human approval (Goal 10).
+
+    This is exactly the bound set from ``docs/13_self_improvement_loop.md`` — the changes a
+    self-improvement loop may *propose* but never *apply* on its own. The governance gate
+    (``governance.py``) default-denies any of these unless a human-issued
+    :class:`ApprovalDecision` is on record, bound to the exact proposed change.
+    """
+
+    BUDGET_INCREASE = "budget_increase"            # expand compute / token / USD budgets
+    TIER_CHANGE = "tier_change"                     # change deployment tier
+    EGRESS_ALLOWLIST_CHANGE = "egress_allowlist_change"
+    EVALUATOR_OR_TEST_CHANGE = "evaluator_or_test_change"
+    SAFETY_GATE_CHANGE = "safety_gate_change"
+    LOGGING_OR_AUDIT_CHANGE = "logging_or_audit_change"
+    PERMISSION_EXPANSION = "permission_expansion"   # widen tool permissions / edit surface
+    EXECUTION_PLANE_NETWORK = "execution_plane_network"
+    AUTONOMOUS_INSTALL = "autonomous_install"
+    MODEL_DEPLOY = "model_deploy"                   # bind a trained model to an agent role (Goal 12)
+    HIGH_RISK_ACTION = "high_risk_action"           # any other irreversible / high-budget action
+
+
+class ApprovalScope(str, Enum):
+    """How long a granted approval authorizes its action."""
+
+    ONCE = "once"          # single-use: consumed the first time the action is authorized
+    STANDING = "standing"  # reusable for the identical change until it expires or is revoked
+
+
+class ApprovalRequest(BaseModel):
+    """A request for a human to approve a governed action (Goal 10).
+
+    ``content_hash`` binds the request to the *exact* proposed change (action + target +
+    payload). An :class:`ApprovalDecision` authorizes only the request with the matching
+    hash, so an approval can never be reused for a different change. Recorded to
+    ``runs/approvals.jsonl`` whether or not it is ever granted — every escalation stays
+    auditable.
+    """
+
+    record: Literal["request"] = "request"
+    request_id: str
+    action: GovernedAction
+    target: str = ""
+    content_hash: str = ""
+    actor: str = ""           # who/what raised it (an agent or the controller) — never approves
+    rationale: str = ""
+    scope: ApprovalScope = ApprovalScope.ONCE
+    created_at: datetime = Field(default_factory=_utcnow)
+    expires_at: datetime | None = None
+
+
+class ApprovalDecision(BaseModel):
+    """A human's decision on an :class:`ApprovalRequest` (Goal 10).
+
+    Only a human issues this (there is no agent tool that can); ``approver`` records who.
+    A granted, unexpired, unrevoked decision whose ``content_hash`` matches the action is
+    the *only* thing that authorizes a governed action.
+    """
+
+    record: Literal["decision"] = "decision"
+    decision_id: str
+    request_id: str
+    content_hash: str
+    action: GovernedAction
+    granted: bool
+    approver: str           # human id — required; agents can never populate this
+    scope: ApprovalScope = ApprovalScope.ONCE
+    reason: str = ""
+    created_at: datetime = Field(default_factory=_utcnow)
+    expires_at: datetime | None = None
+
+
+class ApprovalRevocation(BaseModel):
+    """Revokes a previously-granted :class:`ApprovalDecision` (Goal 10).
+
+    Also used to *consume* a single-use (``ONCE``) approval after it authorizes its action,
+    so it cannot be replayed. Append-only, like everything in the ledger.
+    """
+
+    record: Literal["revocation"] = "revocation"
+    revocation_id: str
+    decision_id: str
+    by: str = ""
+    reason: str = ""
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
 __all__ = [
     "AttemptStatus",
     "GateDecision",
     "GateResult",
     "GateReport",
+    "GovernedAction",
+    "ApprovalScope",
+    "ApprovalRequest",
+    "ApprovalDecision",
+    "ApprovalRevocation",
     "TaskSpec",
     "Candidate",
     "EvaluationResult",
