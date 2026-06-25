@@ -156,11 +156,11 @@
     {
       "number": 18,
       "title": "Provider operations and observability",
-      "status": "specified",
+      "status": "implemented",
       "category": "Cross-tier hardening",
       "prompt_path": "docs/goal_prompts/goal_18_provider_operations_and_observability.md",
-      "artifacts": ["src/siro/providers/", "src/siro/budget.py", "reports/"],
-      "summary": "Specifies provider error taxonomy, bounded retries, request metadata, concurrency limits, and spend/latency reports."
+      "artifacts": ["src/siro/providers/ops.py", "src/siro/providers/_http.py", "src/siro/cli.py"],
+      "summary": "Adds provider error taxonomy, bounded retries, request metadata, provider ops config, and ledger-backed observability reports."
     },
     {
       "number": 19,

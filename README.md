@@ -35,7 +35,7 @@ All design docs live under [`docs/`](docs/).
 | `docs/15_scale_cost_model.md` | Source-backed deployment cost model and scale bands. |
 | `docs/16_low_cost_validation_plan.md` | Cheap local-to-frontier validation ladder. |
 
-Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`17` are implemented. Goals `18`–`20` are post-Tier-2 refinement specs: provider operations (`18`), governance identity (`19`), and the bounded operational pilot (`20`). Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
+Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`18` are implemented. Goals `19`–`20` are post-Tier-2 refinement specs: governance identity (`19`) and the bounded operational pilot (`20`). Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
 
 ## Capability tiers
 
@@ -61,12 +61,13 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goals 01-17 are implemented; Goals 18-20 are specified, not yet implemented.
+Goals 01-18 are implemented; Goals 19-20 are specified, not yet implemented.
 The implemented set includes the Tier 2 governance, compute scale-up, model-training
 testbed work that landed in Goals 10–12, the docs consistency contract in Goal 13,
 the pricing audit/budget-calibration contract in Goal 14, the hard
 resource-isolation backend in Goal 15, the durable research store in Goal 16, and the
-expanded research benchmark suite in Goal 17.
+expanded research benchmark suite in Goal 17, and provider operations/observability in
+Goal 18.
 Every implemented goal reuses the same lifecycle, gates, evaluator, and memory
 schema — only what fills the roles changes, by **config not code**, as the tier rises. Each
 entry below names its goal, the modules/artifacts it added or will add, and what it does.
@@ -156,7 +157,7 @@ entry below names its goal, the modules/artifacts it added or will add, and what
   implementation provider), recorded in a `ModelRegistry`. Disabled entirely at Tier ≤ 1.
   CLI: `train-model`, `deploy-model`.
 
-### Cross-tier hardening and production refinements (Goals 13–17)
+### Cross-tier hardening and production refinements (Goals 13–18)
 
 - **Goal 13 — Documentation consistency contract** (`docs/goal_prompts/goals.json`,
   `docs_check`, CLI): machine-readable goal manifest and docs consistency/privacy
@@ -188,12 +189,13 @@ entry below names its goal, the modules/artifacts it added or will add, and what
   held out of prompts and candidate working directories, and reports richer per-family
   summary fields including mixed/failed outcomes, hidden/reproducibility failures, and
   cost per promotion.
+- **Goal 18 — Provider operations and observability** (`providers/ops`, `providers/_http`,
+  CLI): classified provider errors, bounded retry policy with no retries for auth/config or
+  budget failures, provider request metadata on ledger rows, per-provider ops config, failed
+  call records in the single-agent loop, and `provider-report` for spend, latency, retry,
+  error, family-spend, and cost-per-promotion summaries.
 
-### Cross-tier hardening and production refinements (Goals 18–20) — specified, not yet implemented
-- **Goal 18 — Provider operations and observability** (`providers/`, `budget`, reports):
-  specifies provider error taxonomy, bounded retries, request metadata, per-role
-  concurrency limits, and spend/latency/error reports by provider, model, role, and task
-  family.
+### Cross-tier hardening and production refinements (Goals 19–20) — specified, not yet implemented
 - **Goal 19 — Governance identity and policy hardening** (`governance`, storage, CLI):
   specifies typed operator identities, signed approvals, policy templates, two-person
   approval where required, governance packet export, and ledger verification while keeping
@@ -233,6 +235,7 @@ uv run siro storage-import --store runs/siro.db       # idempotently load JSONL 
 uv run siro storage-export --store runs/siro.db --to-dir runs/export  # SQLite -> JSONL backup, reader-compatible (Goal 16)
 uv run siro storage-verify --store runs/siro.db       # verify governance/artifact hash chains (Goal 16)
 uv run siro summarize-runs --store runs/siro.db       # summaries read JSONL or SQLite (Goal 16)
+uv run siro provider-report --model-calls runs/model_calls.jsonl  # provider spend/latency/retry/error report (Goal 18)
 uv run pytest tests/test_cli.py::test_tier2_model_training_smoke_path_uses_separate_train_and_deploy_approvals  # cheap Tier 2 approval/deploy smoke
 ```
 
@@ -240,9 +243,9 @@ uv run pytest tests/test_cli.py::test_tier2_model_training_smoke_path_uses_separ
 
 1. Read `docs/00_principles.md` and `docs/01_system_architecture.md` for the design.
 2. For historical build context, read the implemented goal prompts in order: `01`–`06` for
-   Tier 0, `07`–`09` for Tier 1, `10`–`12` for the Tier 2 governed testbed, and `13`–`17`
+   Tier 0, `07`–`09` for Tier 1, `10`–`12` for the Tier 2 governed testbed, and `13`–`18`
    for the cross-tier hardening contracts.
 3. Use the command block above to exercise the current implementation by tier; lowering a
    run from Tier 2 → 1 → 0 is config-only.
-4. Treat goals `18`–`20` as the remaining post-Tier-2 hardening roadmap before any serious
+4. Treat goals `19`–`20` as the remaining post-Tier-2 hardening roadmap before any serious
    scale-up.

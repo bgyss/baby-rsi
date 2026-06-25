@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from ._http import Transport
 from ._openai_compatible import OpenAICompatibleClient
+from .ops import RetryPolicy
 from .pricing import Pricing
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
@@ -29,6 +30,7 @@ class OpenAIClient(OpenAICompatibleClient):
         timeout_seconds: float = 120.0,
         temperature: float = 0.7,
         pricing: Pricing | None = None,
+        retry_policy: RetryPolicy | None = None,
         allowed_endpoints: list[str] | None = None,
         transport: Transport | None = None,
     ) -> None:
@@ -40,6 +42,7 @@ class OpenAIClient(OpenAICompatibleClient):
             timeout_seconds=timeout_seconds,
             temperature=temperature,
             pricing=pricing or Pricing.resolve("openai", model),
+            retry_policy=retry_policy,
             allowed_endpoints=allowed_endpoints,
             transport=transport,
         )

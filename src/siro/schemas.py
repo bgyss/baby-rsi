@@ -455,6 +455,12 @@ class ModelCall(BaseModel):
     latency_ms: float = 0.0
     pricing_metadata: dict[str, object] = Field(default_factory=dict)
     experiment_id: str = ""
+    role: str = ""
+    provider_request_id: str = ""
+    http_status: int | None = None
+    retry_count: int = 0
+    final_error_kind: str = ""
+    provider_version: str = ""
     created_at: datetime = Field(default_factory=_utcnow)
 
 

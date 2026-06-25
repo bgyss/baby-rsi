@@ -317,6 +317,7 @@ class Orchestrator:
         """
         response = result.response
         usage = response.usage
+        metadata = response.metadata
         prompt_hash = response.prompt_hash or hashlib.sha256(
             result.role.encode("utf-8")
         ).hexdigest()[:16]
@@ -331,6 +332,12 @@ class Orchestrator:
                 latency_ms=usage.latency_ms,
                 pricing_metadata=usage.pricing_metadata,
                 experiment_id=task_id,
+                role=result.role,
+                provider_request_id=str(metadata.get("provider_request_id", "")),
+                http_status=metadata.get("http_status"),
+                retry_count=int(metadata.get("retry_count", 0) or 0),
+                final_error_kind=str(metadata.get("final_error_kind", "")),
+                provider_version=str(metadata.get("provider_version", "")),
             )
         )
         if self.budget is not None:

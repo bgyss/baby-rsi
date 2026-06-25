@@ -9,6 +9,11 @@ providers:
     base_url: http://127.0.0.1:2276/v1
     name: unsloth/Qwen3.6-27B-GGUF:Q8_0
     timeout_seconds: 120
+    ops:
+      concurrency_limit: 1
+      requests_per_minute: 60
+      retry:
+        max_attempts: 1
   anthropic:
     backend: anthropic
     name: claude-opus-4-8                    # frontier reasoning / implementation
@@ -20,6 +25,14 @@ providers:
       cached_input_per_mtok: null
       last_reviewed: "2026-06-25"
       source_note: "Repo-maintained pricing estimate; refresh from provider docs before scale decisions."
+    ops:
+      concurrency_limit: 2
+      requests_per_minute: 30
+      retry:
+        max_attempts: 3
+        initial_backoff_seconds: 0.25
+        max_backoff_seconds: 2.0
+        jitter_seconds: 0.05
   openai:
     backend: openai
     name: gpt-5.4
@@ -31,6 +44,14 @@ providers:
       cached_input_per_mtok: null
       last_reviewed: "2026-06-25"
       source_note: "Repo-maintained pricing estimate; refresh from provider docs before scale decisions."
+    ops:
+      concurrency_limit: 2
+      requests_per_minute: 30
+      retry:
+        max_attempts: 3
+        initial_backoff_seconds: 0.25
+        max_backoff_seconds: 2.0
+        jitter_seconds: 0.05
 
 agent_models:                                # capability binding per role
   hypothesis: anthropic

@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from ._http import Transport, assert_allowed, post_json
 from .base import BaseModelClient, ModelRequest, ModelResponse, ToolCall, Usage, messages_hash
+from .ops import ProviderError, ProviderErrorKind, RetryPolicy, call_with_retries, provider_metadata
 from .pricing import Pricing, estimate_tokens
 
 DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
@@ -40,6 +41,7 @@ class AnthropicClient(BaseModelClient):
         temperature: float = 0.7,
         max_tokens: int = 4096,
         pricing: Pricing | None = None,
+        retry_policy: RetryPolicy | None = None,
         allowed_endpoints: list[str] | None = None,
         transport: Transport | None = None,
     ) -> None:
@@ -52,6 +54,7 @@ class AnthropicClient(BaseModelClient):
         self.temperature = temperature
         self.default_max_tokens = max_tokens
         self.pricing = pricing or Pricing.resolve("anthropic", model)
+        self.retry_policy = retry_policy or RetryPolicy()
         self.allowed_endpoints = allowed_endpoints
         self._transport = transport or post_json
 
@@ -102,8 +105,27 @@ class AnthropicClient(BaseModelClient):
         assert_allowed(url, self.allowed_endpoints)
         payload = self._build_payload(request)
         start = time.perf_counter()
-        body = self._transport(url, payload, self._headers(), self.timeout_seconds)
+        try:
+            body, retry_count = call_with_retries(
+                lambda: self._transport(url, payload, self._headers(), self.timeout_seconds),
+                self.retry_policy,
+            )
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise ProviderError(ProviderErrorKind.TRANSIENT, str(exc)) from exc
         latency_ms = (time.perf_counter() - start) * 1000.0
+        if isinstance(body.get("error"), dict):
+            err = body["error"]
+            message = str(err.get("message") or err)
+            kind = (
+                ProviderErrorKind.POLICY_REFUSAL
+                if "policy" in message.lower()
+                else ProviderErrorKind.CLIENT_CONFIG
+            )
+            raise ProviderError(kind, message)
+        if "content" not in body:
+            raise ProviderError(ProviderErrorKind.MALFORMED_RESPONSE, "missing content in provider response")
 
         text_parts: list[str] = []
         tool_calls: list[ToolCall] = []
@@ -132,6 +154,7 @@ class AnthropicClient(BaseModelClient):
             latency_ms=latency_ms,
             pricing_metadata=self.pricing.metadata(),
         )
+        metadata = provider_metadata(body, retry_count=retry_count)
         return ModelResponse(
             text=text,
             structured=structured,
@@ -140,6 +163,7 @@ class AnthropicClient(BaseModelClient):
             provider=self.provider,
             model=self.model,
             prompt_hash=messages_hash(request.messages),
+            metadata=metadata,
             raw=body,
         )
 

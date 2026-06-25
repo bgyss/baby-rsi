@@ -35,6 +35,7 @@ def test_subcommands_registered():
         "propose-meta-change",
         "check-docs",
         "pricing-audit",
+        "provider-report",
         "run-scaled",
         "sandbox-backends",
         "storage-migrate",

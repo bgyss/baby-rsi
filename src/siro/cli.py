@@ -19,6 +19,8 @@ cycle uses:
                             patterns (Goal 13).
 - ``pricing-audit``       — report resolved provider pricing, review freshness, and
                             representative cycle costs (Goal 14).
+- ``provider-report``     — summarize provider spend, latency, retries, and errors
+                            from the audit ledger (Goal 18).
 - ``summarize-runs``      — reflect on the archive (real: counts + pass rate + best).
 - ``summarize-research``  — per-family summary of the research suite (Goal 09).
 - ``propose-meta-change`` — propose a process change (Goal 05).
@@ -89,6 +91,7 @@ from .scale import (
 )
 from .schemas import (
     ApprovalScope,
+    AttemptStatus,
     GovernedAction,
     MetaChangeRecord,
     MetaRecommendation,
@@ -850,6 +853,62 @@ def _cmd_pricing_audit(args: argparse.Namespace) -> int:
     return 0
 
 
+def _percentile(values: list[float], pct: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, max(0, round((pct / 100.0) * (len(ordered) - 1))))
+    return ordered[index]
+
+
+def _cmd_provider_report(args: argparse.Namespace) -> int:
+    rows = ModelCallLedger(args.model_calls).read_all() if args.model_calls.exists() else []
+    if not rows:
+        print(f"No model-call ledger rows found in {args.model_calls}.")
+        return 0
+
+    research_attempts = (
+        ResearchArchive(args.research_attempts).read_all() if args.research_attempts.exists() else []
+    )
+    promoted_tasks = {a.task_id for a in research_attempts if a.status is AttemptStatus.PROMOTED}
+    task_family = {a.task_id: (a.family or "(unknown)") for a in research_attempts}
+
+    groups: dict[tuple[str, str, str], list] = {}
+    for row in rows:
+        groups.setdefault((row.provider, row.model, row.role or "(unknown)"), []).append(row)
+
+    print(f"Provider report: {len(rows)} model-call row(s) from {args.model_calls}")
+    for (provider, model, role), scoped in sorted(groups.items()):
+        tokens = sum(r.input_tokens + r.output_tokens for r in scoped)
+        cost = sum(r.cost_usd for r in scoped)
+        latencies = [r.latency_ms for r in scoped if r.latency_ms]
+        errors = [r for r in scoped if r.final_error_kind]
+        retries = sum(r.retry_count for r in scoped)
+        promoted = len({r.experiment_id for r in scoped if r.experiment_id in promoted_tasks})
+        cost_per = "n/a" if not promoted else f"${cost / promoted:.4f}"
+        print(f"\n[{provider}/{model} role={role}] calls={len(scoped)} tokens={tokens} cost=${cost:.4f}")
+        print(
+            f"  latency_ms: p50={_percentile(latencies, 50):.1f} "
+            f"p95={_percentile(latencies, 95):.1f}"
+        )
+        print(
+            f"  retries={retries} error_rate={(len(errors) / len(scoped)):.0%} "
+            f"escalations={len(errors)} cost_per_promotion={cost_per}"
+        )
+        family_spend: dict[str, float] = {}
+        for row in scoped:
+            family = task_family.get(row.experiment_id, "(unknown)")
+            family_spend[family] = family_spend.get(family, 0.0) + row.cost_usd
+        print(
+            "  spend_by_family: "
+            + ", ".join(f"{family}=${amount:.4f}" for family, amount in sorted(family_spend.items()))
+        )
+        if errors:
+            kinds = Counter(r.final_error_kind for r in errors)
+            print("  error_kinds: " + ", ".join(f"{kind}={count}" for kind, count in kinds.items()))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="siro",
@@ -1244,6 +1303,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Exit nonzero when any configured provider has missing or stale pricing.",
     )
     p_pricing.set_defaults(func=_cmd_pricing_audit)
+
+    p_provider_report = sub.add_parser(
+        "provider-report",
+        help="Summarize provider spend, latency, retries, and errors (Goal 18).",
+    )
+    p_provider_report.add_argument(
+        "--model-calls",
+        type=Path,
+        default=Path("runs/model_calls.jsonl"),
+        help="Model-call audit ledger path (default: runs/model_calls.jsonl).",
+    )
+    p_provider_report.add_argument(
+        "--research-attempts",
+        type=Path,
+        default=DEFAULT_RESEARCH_ATTEMPTS_PATH,
+        help=f"Research-attempts archive for cost-per-promotion attribution "
+        f"(default: {DEFAULT_RESEARCH_ATTEMPTS_PATH}).",
+    )
+    p_provider_report.set_defaults(func=_cmd_provider_report)
 
     p_sum = sub.add_parser("summarize-runs", help="Summarize an attempts archive.")
     p_sum.add_argument(

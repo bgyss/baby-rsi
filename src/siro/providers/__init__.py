@@ -30,6 +30,7 @@ from .base import (
 )
 from .local import DEFAULT_BASE_URL, DEFAULT_MODEL, LocalOpenAIClient
 from .openai import OpenAIClient
+from .ops import ProviderOpsConfig
 from .pricing import Pricing, parse_price_override
 
 
@@ -49,6 +50,7 @@ class ProviderConfig:
     timeout_seconds: float = 120.0
     temperature: float = 0.7
     prices: Pricing | None = None
+    ops: ProviderOpsConfig = field(default_factory=ProviderOpsConfig)
     extra: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -62,6 +64,7 @@ class ProviderConfig:
             timeout_seconds=float(block.get("timeout_seconds", 120.0)),
             temperature=float(block.get("temperature", 0.7)),
             prices=parse_price_override(block.get("prices")),
+            ops=ProviderOpsConfig.from_block(block),
         )
 
 
@@ -93,6 +96,7 @@ def build_client(
             timeout_seconds=cfg.timeout_seconds,
             temperature=cfg.temperature,
             pricing=pricing,
+            retry_policy=cfg.ops.retry,
             allowed_endpoints=allowed_endpoints,
             transport=transport,
         )
@@ -104,6 +108,7 @@ def build_client(
             timeout_seconds=cfg.timeout_seconds,
             temperature=cfg.temperature,
             pricing=pricing,
+            retry_policy=cfg.ops.retry,
             allowed_endpoints=allowed_endpoints,
             transport=transport,
         )
@@ -115,6 +120,7 @@ def build_client(
             timeout_seconds=cfg.timeout_seconds,
             temperature=cfg.temperature,
             pricing=pricing,
+            retry_policy=cfg.ops.retry,
             allowed_endpoints=allowed_endpoints,
             transport=transport,
         )

@@ -28,6 +28,7 @@ from .memory import ResearchMemory
 from .model_client import ModelClient, extract_code
 from .prompts import load_prompt
 from .providers.base import Usage
+from .providers.ops import ProviderError
 from .sandbox import Sandbox
 from .schemas import (
     Attempt,
@@ -225,6 +226,8 @@ class Controller:
         even the one that trips a ceiling. A breach raises ``BudgetExceeded``, which
         propagates out of the loop as the halt-and-escalate signal.
         """
+        last_response = getattr(model, "last_response", None)
+        metadata = getattr(last_response, "metadata", {}) or {}
         self.ledger.append(
             ModelCall(
                 provider=getattr(model, "provider", "unknown"),
@@ -236,10 +239,34 @@ class Controller:
                 latency_ms=usage.latency_ms or latency_ms,
                 pricing_metadata=usage.pricing_metadata,
                 experiment_id=task_id,
+                role="implementation",
+                provider_request_id=str(metadata.get("provider_request_id", "")),
+                http_status=metadata.get("http_status"),
+                retry_count=int(metadata.get("retry_count", 0) or 0),
+                final_error_kind=str(metadata.get("final_error_kind", "")),
+                provider_version=str(metadata.get("provider_version", "")),
             )
         )
         if self.budget is not None:
             self.budget.charge(usage)
+
+    def _log_failed_model_call(
+        self, model: ModelClient, prompt: str, exc: ProviderError, latency_ms: float, task_id: str
+    ) -> None:
+        self.ledger.append(
+            ModelCall(
+                provider=getattr(model, "provider", "unknown"),
+                model=getattr(model, "model", "unknown"),
+                prompt_hash=hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16],
+                latency_ms=latency_ms,
+                experiment_id=task_id,
+                role="implementation",
+                provider_request_id=exc.request_id,
+                http_status=exc.status_code,
+                retry_count=exc.retry_count,
+                final_error_kind=exc.kind.value,
+            )
+        )
 
     def run_task(
         self,
@@ -272,7 +299,12 @@ class Controller:
         for _ in range(generations):
             prompt = self._build_prompt(task, best.candidate.code)
             start = time.perf_counter()
-            raw = model.generate(prompt)
+            try:
+                raw = model.generate(prompt)
+            except ProviderError as exc:
+                latency_ms = (time.perf_counter() - start) * 1000.0
+                self._log_failed_model_call(model, prompt, exc, latency_ms, task.task_id)
+                raise
             latency_ms = (time.perf_counter() - start) * 1000.0
             usage = getattr(model, "last_usage", None) or Usage()
             self._log_model_call(model, prompt, usage, latency_ms, task.task_id)

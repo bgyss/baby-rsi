@@ -101,6 +101,7 @@ class ModelResponse:
     provider: str = ""
     model: str = ""
     prompt_hash: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
     raw: dict[str, Any] | None = None
 
 

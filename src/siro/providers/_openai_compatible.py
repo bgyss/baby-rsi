@@ -22,6 +22,7 @@ from .base import (
     Usage,
     messages_hash,
 )
+from .ops import ProviderError, ProviderErrorKind, RetryPolicy, call_with_retries, provider_metadata
 from .pricing import Pricing, estimate_tokens
 
 
@@ -69,8 +70,16 @@ def parse_response(
     model: str,
     pricing: Pricing,
     latency_ms: float,
+    metadata: dict[str, Any] | None = None,
 ) -> ModelResponse:
     """Parse a Chat Completions body into a provider-neutral :class:`ModelResponse`."""
+    if isinstance(body.get("error"), dict):
+        err = body["error"]
+        message = str(err.get("message") or err)
+        kind = ProviderErrorKind.POLICY_REFUSAL if "policy" in message.lower() else ProviderErrorKind.CLIENT_CONFIG
+        raise ProviderError(kind, message)
+    if not body.get("choices"):
+        raise ProviderError(ProviderErrorKind.MALFORMED_RESPONSE, "missing choices in provider response")
     choice = (body.get("choices") or [{}])[0]
     message = choice.get("message", {})
     text = message.get("content") or ""
@@ -100,6 +109,7 @@ def parse_response(
         latency_ms=latency_ms,
         pricing_metadata=pricing.metadata(),
     )
+    response_meta = metadata or provider_metadata(body)
     return ModelResponse(
         text=text,
         structured=structured,
@@ -108,6 +118,7 @@ def parse_response(
         provider=provider,
         model=model,
         prompt_hash=messages_hash(request.messages),
+        metadata=response_meta,
         raw=body,
     )
 
@@ -125,6 +136,7 @@ class OpenAICompatibleClient(BaseModelClient):
         timeout_seconds: float = 120.0,
         temperature: float = 0.7,
         pricing: Pricing | None = None,
+        retry_policy: RetryPolicy | None = None,
         allowed_endpoints: list[str] | None = None,
         transport: Transport | None = None,
     ) -> None:
@@ -136,6 +148,7 @@ class OpenAICompatibleClient(BaseModelClient):
         self.timeout_seconds = timeout_seconds
         self.temperature = temperature
         self.pricing = pricing or Pricing()
+        self.retry_policy = retry_policy or RetryPolicy()
         self.allowed_endpoints = allowed_endpoints
         self._transport = transport or post_json
 
@@ -153,9 +166,20 @@ class OpenAICompatibleClient(BaseModelClient):
         assert_allowed(url, self.allowed_endpoints)
         payload = build_payload(self.model, request)
         start = time.perf_counter()
-        body = self._transport(url, payload, self._headers(), self.timeout_seconds)
+        try:
+            body, retry_count = call_with_retries(
+                lambda: self._transport(url, payload, self._headers(), self.timeout_seconds),
+                self.retry_policy,
+            )
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise ProviderError(ProviderErrorKind.TRANSIENT, str(exc)) from exc
         latency_ms = (time.perf_counter() - start) * 1000.0
-        return parse_response(body, request, self.provider, self.model, self.pricing, latency_ms)
+        metadata = provider_metadata(body, retry_count=retry_count)
+        return parse_response(
+            body, request, self.provider, self.model, self.pricing, latency_ms, metadata=metadata
+        )
 
 
 __all__ = ["OpenAICompatibleClient", "build_payload", "parse_response"]
