@@ -72,8 +72,8 @@ The existing tests already cover important invariants:
 ### Documentation drift already appeared
 
 `README.md` had an inconsistent status summary: the detailed implementation section
-said Goals 01-12 were implemented, while the earlier goal-map paragraph still said
-Goals 10-12 were specs not yet built.
+said Goals 01-12 were implemented, while other status text still treated Tier 2 as
+aspirational or skipped over the implemented Goals 10-12 path.
 
 That is a small example of a serious project risk. In this repo, documentation is part
 of the contract. When docs drift from implementation, future agents will make wrong

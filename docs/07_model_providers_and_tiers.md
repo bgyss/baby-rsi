@@ -42,11 +42,15 @@ A "tier" is a deployment posture, not a single model. Each tier widens capabilit
 - Network egress is allowed **only** from the control plane to allow-listed model-provider endpoints (see below). Candidate execution stays offline.
 - Purpose: run the end-to-end research org on real research-shaped tasks (`08_frontier_prototype_architecture.md`).
 
-### Tier 2 — Governed scale-up (aspirational)
+### Tier 2 — Governed scale-up
 
-- Larger compute, longer experiments, possibly model-training experiments.
+- Larger compute, longer experiments, and bounded model-training experiments.
 - Every capability beyond Tier 1 requires an explicit human-approved governance gate.
-- Out of scope for the initial build; documented so the architecture leaves room for it without redesign.
+- Implemented as a local governed testbed in Goals 10–12: approvals are default-deny and
+  hash-bound, compute tiers require promotion-before-budget plus approval, and training
+  produces offline artifacts that are never auto-deployed.
+- Production hardening remains in Goals 13–20: stronger isolation, durable storage,
+  provider operations, governance identity, and a bounded operational pilot.
 
 ## Control plane vs execution plane
 

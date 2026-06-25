@@ -61,10 +61,11 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goals 01–12 are implemented; Goals 13–20 are specified, not yet implemented. Every
-implemented goal reuses the same lifecycle, gates, evaluator, and memory schema — only what
-fills the roles changes, by **config not code**, as the tier rises. Each entry below names
-its goal, the modules/artifacts it added or will add, and what it does.
+Goals 01–12 are implemented, including the Tier 2 governance, compute scale-up, and
+model-training testbed work that landed in Goals 10–12. Goals 13–20 are specified, not yet
+implemented. Every implemented goal reuses the same lifecycle, gates, evaluator, and memory
+schema — only what fills the roles changes, by **config not code**, as the tier rises. Each
+entry below names its goal, the modules/artifacts it added or will add, and what it does.
 
 ### Tier 0 — local bounded testbed (Goals 01–06)
 
@@ -207,7 +208,8 @@ uv run siro deploy-model <artifact_id> implementation --implementation-provider 
 ## Suggested use
 
 1. Read `docs/00_principles.md` and `docs/01_system_architecture.md` for the design.
-2. Start with `docs/goal_prompts/goal_01_project_scaffold.md` and implement goals in order.
-3. Implement only the local, bounded Tier 0 testbed first.
-4. Add the frontier-LLM Tier 1 organization (goals `07`–`09`) only after evaluation, sandboxing, and auditability are working.
-5. Treat goals `13`–`20` as the post-Tier-2 hardening roadmap before any serious scale-up.
+2. For historical build context, read the implemented goal prompts in order: `01`–`06` for
+   Tier 0, `07`–`09` for Tier 1, and `10`–`12` for the Tier 2 governed testbed.
+3. Use the command block above to exercise the current implementation by tier; lowering a
+   run from Tier 2 → 1 → 0 is config-only.
+4. Treat goals `13`–`20` as the post-Tier-2 hardening roadmap before any serious scale-up.
