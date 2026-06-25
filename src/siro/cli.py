@@ -7,7 +7,9 @@ cycle uses:
 - ``run-task``            — run the per-task improvement loop (Goal 02).
 - ``run-training``        — run the tiny-training improvement loop (Goal 06).
 - ``run-org``             — run one full frontier-org research cycle (Goal 08).
+- ``run-research``        — run the org on research-shaped task(s) (Goal 09).
 - ``summarize-runs``      — reflect on the archive (real: counts + pass rate + best).
+- ``summarize-research``  — per-family summary of the research suite (Goal 09).
 - ``propose-meta-change`` — propose a process change (Goal 05).
 
 Uses only the standard library ``argparse`` to keep Tier 0 dependency-light.
@@ -29,6 +31,13 @@ from .meta import MetaChangeStore, MetaResearcher
 from .model_client import LocalOpenAIClient
 from .orchestrator import Orchestrator
 from .providers import ModelClient
+from .research import (
+    DEFAULT_RESEARCH_ATTEMPTS_PATH,
+    DEFAULT_RESEARCH_TASKS_DIR,
+    ResearchArchive,
+    discover_research_tasks,
+    summarize_research,
+)
 from .schemas import MetaChangeRecord, MetaRecommendation
 from .training import (
     DEFAULT_BUDGET_SECONDS,
@@ -170,6 +179,85 @@ def _cmd_run_org(args: argparse.Namespace) -> int:
     if result.next_actions:
         print(f"  next: {'; '.join(result.next_actions)}")
     print(f"Recorded 1 attempt to {args.archive} and memory to {args.memory}.")
+    return 0
+
+
+def _cmd_run_research(args: argparse.Namespace) -> int:
+    """Run the full org on research-shaped task(s) (Goal 09).
+
+    With a ``task_dir`` it runs one cycle on that task; with none it runs one cycle on every
+    task discovered under ``tasks/research/`` — so "the Tier 1 org runs a full lifecycle on
+    each task family" is one command. Promotion is decided by each task's own ``eval.py``
+    (the objective evaluator), not by any model. Lowering the tier is config-only.
+    """
+    config = load_config(args.config)
+    ledger = ModelCallLedger(args.model_calls)
+    budget = None if config.budget.unbounded else BudgetTracker(config.budget, ledger=ledger)
+    orchestrator = Orchestrator.from_config(
+        config,
+        memory=ResearchMemory(args.memory),
+        ledger=ledger,
+        budget=budget,
+        research_archive=ResearchArchive(args.archive),
+    )
+    if args.task_dir is not None:
+        tasks = [args.task_dir]
+    else:
+        discovered = discover_research_tasks(args.tasks_root)
+        if not discovered:
+            print(f"No research tasks found under {args.tasks_root}.")
+            return 0
+        tasks = [Path(t.path) for t in discovered]
+
+    print(f"config: tier {config.tier} ({args.config}); cross-model review: "
+          f"{'required' if orchestrator.require_cross_model else 'not required (all-local)'}")
+    print(f"run-research: {len(tasks)} task(s), objective={args.objective!r}")
+    for task_dir in tasks:
+        try:
+            result = orchestrator.run_research_cycle(args.objective, task_dir)
+        except BudgetExceeded as exc:
+            print(f"HALTED — budget ceiling breached ({exc.kind}): {exc}")
+            print("Escalation required: a human must approve raising the ceiling (config-only).")
+            return 2
+        metric = result.metric
+        primary = (
+            f"{metric.primary_name}={metric.primary:g} passed={metric.passed}"
+            if metric is not None
+            else "(not evaluated)"
+        )
+        print(
+            f"  [{result.family:>9}] {result.task_id:<16} "
+            f"{result.promotion_decision.value.upper():<9} {primary}"
+        )
+        for escalation in result.escalations:
+            print(f"      ESCALATION: {escalation}")
+    print(f"Recorded research attempts to {args.archive} and memory to {args.memory}.")
+    return 0
+
+
+def _cmd_summarize_research(args: argparse.Namespace) -> int:
+    """Per-family suite summary (Goal 09 acceptance): pass rate, median cycles to success,
+    safety-gate failures, token/USD spend, and strategy diversity."""
+    attempts = ResearchArchive(args.path).read_all()
+    if not attempts:
+        print(f"No research attempts found in {args.path}.")
+        return 0
+    ledger_rows = ModelCallLedger(args.model_calls).read_all() if args.model_calls.exists() else []
+    summaries = summarize_research(attempts, ledger_rows=ledger_rows)
+
+    print(f"Research attempts: {len(attempts)}  (from {args.path})")
+    for family, s in summaries.items():
+        cycles = (
+            f"{s.median_cycles_to_success:.1f}"
+            if s.median_cycles_to_success is not None
+            else "n/a"
+        )
+        print(f"\n[{family}]  tasks: {', '.join(s.task_ids)}")
+        print(f"  attempts={s.attempts}  promoted={s.promoted}  pass_rate={s.pass_rate:.0%}")
+        print(f"  median cycles to success: {cycles}")
+        print(f"  safety-gate failures: {s.safety_gate_failures}")
+        print(f"  spend: {s.tokens} tokens  ${s.cost_usd:.4f}")
+        print(f"  strategy diversity: {s.strategy_diversity:.0%}  (distinct candidates / attempts)")
     return 0
 
 
@@ -397,6 +485,74 @@ def build_parser() -> argparse.ArgumentParser:
         help="Research-memory path (default: runs/memory.jsonl).",
     )
     p_org.set_defaults(func=_cmd_run_org)
+
+    p_research = sub.add_parser(
+        "run-research",
+        help="Run the full org on research-shaped task(s) (Goal 09).",
+    )
+    p_research.add_argument(
+        "task_dir",
+        type=Path,
+        nargs="?",
+        default=None,
+        help="A research task dir. Omit to run one cycle on every task under tasks/research/.",
+    )
+    p_research.add_argument(
+        "--objective",
+        default="Improve the task against its objective metric.",
+        help="The human research objective the organization works toward.",
+    )
+    p_research.add_argument(
+        "--config",
+        type=Path,
+        default=Path("config/tier1.frontier.yaml"),
+        help="Tier/provider config (default: config/tier1.frontier.yaml). "
+        "Use config/tier0.local.yaml to run the same org fully local — config-only.",
+    )
+    p_research.add_argument(
+        "--tasks-root",
+        type=Path,
+        default=DEFAULT_RESEARCH_TASKS_DIR,
+        help=f"Root to discover research tasks (default: {DEFAULT_RESEARCH_TASKS_DIR}).",
+    )
+    p_research.add_argument(
+        "--archive",
+        type=Path,
+        default=DEFAULT_RESEARCH_ATTEMPTS_PATH,
+        help=f"Research-attempts archive (default: {DEFAULT_RESEARCH_ATTEMPTS_PATH}).",
+    )
+    p_research.add_argument(
+        "--model-calls",
+        type=Path,
+        default=Path("runs/model_calls.jsonl"),
+        help="Model-call audit ledger path (default: runs/model_calls.jsonl).",
+    )
+    p_research.add_argument(
+        "--memory",
+        type=Path,
+        default=Path("runs/memory.jsonl"),
+        help="Research-memory path (default: runs/memory.jsonl).",
+    )
+    p_research.set_defaults(func=_cmd_run_research)
+
+    p_sumr = sub.add_parser(
+        "summarize-research",
+        help="Per-family summary of the research suite (Goal 09).",
+    )
+    p_sumr.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        default=DEFAULT_RESEARCH_ATTEMPTS_PATH,
+        help=f"Research-attempts archive (default: {DEFAULT_RESEARCH_ATTEMPTS_PATH}).",
+    )
+    p_sumr.add_argument(
+        "--model-calls",
+        type=Path,
+        default=Path("runs/model_calls.jsonl"),
+        help="Model-call audit ledger, for per-family spend (default: runs/model_calls.jsonl).",
+    )
+    p_sumr.set_defaults(func=_cmd_summarize_research)
 
     p_sum = sub.add_parser("summarize-runs", help="Summarize an attempts archive.")
     p_sum.add_argument(

@@ -58,7 +58,7 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goals 01–08 are implemented: the `siro` package (`src/siro/`) with explicit Pydantic
+Goals 01–09 are implemented: the `siro` package (`src/siro/`) with explicit Pydantic
 schemas, an append-only JSONL archive + audit ledger, plane-isolation safety
 primitives, the objective scoring function, and a CLI surface (Goal 01); the per-task
 code-improver loop — `controller` + isolated `sandbox` execution (Goal 02); durable
@@ -96,7 +96,23 @@ safety reviewer and the objective promotion gate is surfaced as an **escalation*
 tie-break. Every agent call is in the audit ledger and charged against the token/USD
 ceilings, candidate execution stays offline and sandboxed, meta-research stays proposal-only
 and human-gated, and dropping `tier: 1` → `tier: 0` returns the whole org to fully-local
-operation with no code change (Goal 08).
+operation with no code change (Goal 08);
+and the research-shaped task suite + evaluation harness — `research` + `tasks/research/`,
+which gives the org *real work* beyond single-function repair: three task families
+(`algorithm/` scored by executed-line count vs. a hidden workload, `training/` a
+Karpathy-style tiny-MLP scored by held-out validation loss under a fixed wall-clock budget,
+and `policy/` a rule-based sentiment policy scored by aggregate pass rate over a held-out
+benchmark). Each task carries a `brief.md`, a `baseline/` edit surface, a controller-owned
+objective `eval.py` (the authority for promotion, returning a typed `MetricRecord`), and an
+optional `hidden/` held-out set. `Orchestrator.run_research_cycle` runs the **same** full
+lifecycle and gates on these tasks; promotion is decided by the objective evaluator (never
+model self-judgment) and requires a *reproducible* improvement over the baseline. No-leakage
+is **enforced, not assumed**: held-out data is handed to `eval.py` outside the candidate's
+working directory via `SIRO_HIDDEN_PATH`, so there is no relative file to open and reading
+the env var or an absolute path from candidate code trips the static safety gate. Attempts
+(successes and negative results) land in a separate `runs/research_attempts.jsonl`, and
+`summarize-research` reports, per family, pass rate, median cycles to success, safety-gate
+failures, token/USD spend, and strategy diversity (Goal 09).
 The canonical interface is `uv run siro` (mise tasks are thin wrappers):
 
 ```zsh
@@ -107,6 +123,9 @@ uv run siro run-task tasks/code_improver/task_001 --config config/tier1.frontier
 uv run siro run-training tasks/training/task_001      # per-task training inner loop (Goal 06)
 uv run siro run-org tasks/code_improver/task_001 --objective "Make sum_list simpler"  # full Tier 1 org cycle (Goal 08)
 uv run siro run-org tasks/code_improver/task_001 --config config/tier0.local.yaml     # same org, fully local — config-only
+uv run siro run-research                              # org runs every research-suite task (Goal 09)
+uv run siro run-research tasks/research/training/tiny_mlp --config config/tier0.local.yaml  # one family, fully local
+uv run siro summarize-research                        # per-family suite summary (Goal 09)
 uv run siro propose-meta-change runs/attempts.jsonl   # meta-research outer loop (Goal 05)
 ```
 

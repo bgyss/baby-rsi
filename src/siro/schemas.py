@@ -338,6 +338,62 @@ class TrainingAttempt(BaseModel):
     created_at: datetime = Field(default_factory=_utcnow)
 
 
+class MetricRecord(BaseModel):
+    """The typed metric a research task's ``eval.py`` returns (Goal 09).
+
+    Research-shaped tasks (``docs/goal_prompts/goal_09_research_task_suite.md``) score a
+    candidate on a continuous **primary** metric plus named **secondary** metrics, instead
+    of pytest pass/fail counts. The evaluator (``eval.py``) is the *authority for promotion*:
+    it runs in the offline execution plane and emits this record; the controller — never a
+    model — decides promotion from it.
+
+    - ``primary`` is the gating metric; ``higher_is_better`` fixes its direction (e.g.
+      accuracy is higher-better, validation loss / executed-line count are lower-better).
+    - ``passed`` is the correctness/success precondition (all hidden cases satisfied, a
+      finite metric produced). A candidate that is not ``passed`` can never be promoted,
+      regardless of its primary value.
+    - ``reproducible`` mirrors the code/training loops: a timeout or error is not a
+      reproducible signal of quality and can never be promoted.
+    - ``secondary`` carries informational metrics (runtime, throughput, …) recorded for
+      audit and reflection.
+    """
+
+    primary_name: str = "primary"
+    primary: float = 0.0
+    higher_is_better: bool = True
+    passed: bool = False
+    secondary: dict[str, float] = Field(default_factory=dict)
+    reproducible: bool = False
+    error: str = ""
+    notes: str = ""
+
+    def directional(self) -> float:
+        """The primary value oriented so that *larger is always better* (for selection)."""
+        return self.primary if self.higher_is_better else -self.primary
+
+
+class ResearchAttempt(BaseModel):
+    """One archived research-task attempt — kept apart from code/training attempts (Goal 09).
+
+    Mirrors :class:`Attempt` and :class:`TrainingAttempt` but carries a generic
+    :class:`MetricRecord` produced by the task's own ``eval.py``. ``family`` groups attempts
+    so the suite summary can report per task family (algorithm / training / policy). Stored
+    in ``runs/research_attempts.jsonl``; negative results — failed correctness, regressions,
+    timeouts, gate rejections — are recorded with their ``status`` and ``reason``, never
+    discarded.
+    """
+
+    attempt_id: str
+    task_id: str
+    family: str = ""
+    candidate: Candidate
+    metric: MetricRecord | None = None
+    status: AttemptStatus = AttemptStatus.REJECTED
+    reason: str = ""
+    gates: GateReport | None = None
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
 class ModelCall(BaseModel):
     """Audit-ledger row appended to ``runs/model_calls.jsonl`` for every model call.
 
@@ -366,6 +422,8 @@ __all__ = [
     "EvaluationResult",
     "Attempt",
     "MemoryEntry",
+    "MetricRecord",
+    "ResearchAttempt",
     "WORST_VAL_LOSS",
     "TrainConfig",
     "TrainResult",

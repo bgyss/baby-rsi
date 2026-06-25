@@ -95,6 +95,33 @@ class TrainingRun:
         return not self.timed_out and not self.error and "val_loss" in self.metrics
 
 
+@dataclass(frozen=True)
+class ResearchRun:
+    """Raw, objective output of one sandboxed *research-task* evaluation (Goal 09).
+
+    The generic analogue of :class:`SandboxResult`/:class:`TrainingRun`: a research task's
+    own ``eval.py`` is the authority, and it prints a JSON metric record (primary +
+    secondary + ``passed``) on its last stdout line. ``metrics`` is that parsed object;
+    ``timed_out``/``error`` mark runs that produced no usable record. Scoring/promotion
+    logic lives in ``research``; this only carries the objective measurement.
+    """
+
+    metrics: dict = field(default_factory=dict)
+    runtime_ms: float = 0.0
+    timed_out: bool = False
+    error: str = ""
+
+    @property
+    def ran(self) -> bool:
+        """True if ``eval.py`` produced a usable metric record (a ``primary`` value)."""
+        return (
+            not self.timed_out
+            and not self.error
+            and "primary" in self.metrics
+            and "error" not in self.metrics
+        )
+
+
 def _truncate(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit] + "\n...[truncated]"
 
@@ -294,4 +321,94 @@ class Sandbox:
             return TrainingRun(metrics=metrics, runtime_ms=runtime_ms)
 
 
-__all__ = ["SandboxConfig", "SandboxResult", "TrainingRun", "Sandbox"]
+    def run_research(
+        self,
+        eval_path,  # noqa: ANN001 - Path to the controller-owned eval.py
+        files: dict,
+        *,
+        hidden_payload: str | None = None,
+        budget_seconds: float = 10.0,
+    ) -> ResearchRun:
+        """Run a research task's fixed ``eval.py`` against candidate ``files`` in isolation.
+
+        Same execution-plane contract as :meth:`run` / :meth:`run_training`: a temp dir, a
+        credential-scrubbed env, the network-blocking ``sitecustomize``, and a hard
+        subprocess timeout. Plane isolation is structural here:
+
+        - ``eval.py`` is **controller-owned** — copied from the task directory, never
+          candidate-supplied — so a candidate cannot weaken or rewrite what scores it.
+        - ``files`` is the candidate's edited edit surface plus any read-only baseline
+          support files (written by name into the temp dir).
+        - ``hidden_payload`` (held-out data/labels the agent never saw) is written **outside**
+          the candidate's working/import directory, into a separate temp dir, and its path is
+          handed to ``eval.py`` only via the ``SIRO_HIDDEN_PATH`` env var. So no-leakage is
+          enforced, not assumed: there is no relative ``_hidden.json`` in the candidate's cwd
+          to ``open``; reading the env var from candidate code trips the safety gate's
+          ``env_read`` rule, and hardcoding the absolute path trips its ``filesystem`` rule.
+          The held-out labels also never enter a model prompt.
+
+        ``eval.py`` prints a single JSON object (the metric record) on its last stdout line.
+        """
+        script = Path(eval_path)
+        env = self.child_env()
+        assert_execution_plane_isolated(env)
+        hard_timeout = budget_seconds + 5.0
+
+        with TemporaryDirectory(prefix="siro-research-") as tmp, TemporaryDirectory(
+            prefix="siro-hidden-"
+        ) as hidden_tmp:
+            tmpdir = Path(tmp)
+            run_script = tmpdir / "eval.py"
+            shutil.copyfile(script, run_script)
+            (tmpdir / "sitecustomize.py").write_text(_SITECUSTOMIZE, encoding="utf-8")
+            for name, content in files.items():
+                (tmpdir / name).write_text(content, encoding="utf-8")
+            # Cooperative budget passed to the evaluator (e.g. a training task's wall clock).
+            (tmpdir / "_budget.json").write_text(
+                json.dumps({"budget_seconds": budget_seconds}), encoding="utf-8"
+            )
+
+            env["PYTHONPATH"] = str(tmpdir)
+            if hidden_payload is not None:
+                # Held-out data lives outside the candidate's cwd/import path (see above).
+                hidden_path = Path(hidden_tmp) / "hidden.json"
+                hidden_path.write_text(hidden_payload, encoding="utf-8")
+                env["SIRO_HIDDEN_PATH"] = str(hidden_path)
+            cmd = [sys.executable, str(run_script)]
+            start = time.perf_counter()
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    cwd=tmpdir,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=hard_timeout,
+                )
+            except subprocess.TimeoutExpired:
+                runtime_ms = (time.perf_counter() - start) * 1000.0
+                return ResearchRun(
+                    runtime_ms=runtime_ms,
+                    timed_out=True,
+                    error=f"evaluation exceeded hard timeout of {hard_timeout}s",
+                )
+            runtime_ms = (time.perf_counter() - start) * 1000.0
+
+            if proc.returncode != 0:
+                return ResearchRun(
+                    runtime_ms=runtime_ms,
+                    error=_truncate(proc.stderr or "eval.py failed", self.config.max_output_bytes),
+                )
+            line = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else ""
+            try:
+                metrics = json.loads(line)
+            except (json.JSONDecodeError, IndexError):
+                return ResearchRun(runtime_ms=runtime_ms, error="eval.py produced no parseable metric record")
+            if not isinstance(metrics, dict):
+                return ResearchRun(runtime_ms=runtime_ms, error="eval.py metric record was not a JSON object")
+            if "error" in metrics:
+                return ResearchRun(runtime_ms=runtime_ms, metrics=metrics, error=str(metrics["error"]))
+            return ResearchRun(metrics=metrics, runtime_ms=runtime_ms)
+
+
+__all__ = ["SandboxConfig", "SandboxResult", "TrainingRun", "ResearchRun", "Sandbox"]

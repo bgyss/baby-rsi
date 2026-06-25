@@ -1,0 +1,8 @@
+{
+  "family": "algorithm",
+  "objective": "Make count_pairs correct and asymptotically cheaper than the naive O(n^2) baseline.",
+  "edit_surface": "solution.py",
+  "primary_metric": "executed_lines",
+  "higher_is_better": false,
+  "budget_seconds": 10.0
+}

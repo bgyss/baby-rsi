@@ -59,6 +59,16 @@ from .gates import function_signatures, promotion_gate, static_gates
 from .memory import ResearchMemory, entry_from_attempt
 from .meta import forbidden_meta_change
 from .providers.base import extract_code
+from .research import (
+    ResearchArchive,
+    ResearchTask,
+    entry_from_research_attempt,
+    load_research_task,
+    make_candidate,
+    research_improves,
+    research_reproducibility_gate,
+    run_research_eval,
+)
 from .sandbox import Sandbox
 from .schemas import (
     Attempt,
@@ -67,7 +77,9 @@ from .schemas import (
     EvaluationResult,
     GateDecision,
     GateReport,
+    MetricRecord,
     ModelCall,
+    ResearchAttempt,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -92,6 +104,22 @@ def _fmt_eval(ev: EvaluationResult | None) -> str:
 def _objective_pass(ev: EvaluationResult | None) -> bool:
     """A reproducible candidate that passes every test (the objective, authoritative read)."""
     return ev is not None and ev.reproducible and ev.failed_tests == 0 and ev.passed_tests > 0
+
+
+def _fmt_metric(m: MetricRecord | None) -> str:
+    """One-line render of a research metric record for the agent prompts and the trace."""
+    if m is None:
+        return "(not evaluated — blocked before execution)"
+    secondary = " ".join(f"{k}={v:g}" for k, v in m.secondary.items())
+    base = (
+        f"{m.primary_name}={m.primary:g} passed={m.passed} reproducible={m.reproducible}"
+    )
+    return f"{base} {secondary}".rstrip() if not m.error else f"{base} error={m.error}"
+
+
+def _research_objective_pass(m: MetricRecord | None) -> bool:
+    """The objective, authoritative read of a research metric (reproducible + passed)."""
+    return m is not None and m.reproducible and m.passed
 
 
 def _improves(candidate: EvaluationResult, baseline: EvaluationResult) -> tuple[bool, str]:
@@ -138,6 +166,36 @@ class CycleResult:
         return self.promotion_decision is GateDecision.PASSED
 
 
+@dataclass
+class ResearchCycleResult:
+    """The full, auditable trace of one research-shaped cycle (Goal 09).
+
+    The analogue of :class:`CycleResult` for a ``tasks/research/`` task: the org ran the
+    full lifecycle and the task's own ``eval.py`` (not a model) decided promotion. Carries
+    the typed :class:`MetricRecord` and the task ``family`` so the suite summary can report
+    per family.
+    """
+
+    objective: str
+    task_id: str
+    family: str
+    budget_tier: int
+    cross_model_review: bool
+    attempt: ResearchAttempt
+    promotion_decision: GateDecision
+    gates: GateReport
+    metric: MetricRecord | None = None
+    baseline_metric: MetricRecord | None = None
+    agent_outputs: dict[str, AgentResult] = field(default_factory=dict)
+    escalations: list[str] = field(default_factory=list)
+    triaged_in: bool = True
+    next_actions: list[str] = field(default_factory=list)
+
+    @property
+    def promoted(self) -> bool:
+        return self.promotion_decision is GateDecision.PASSED
+
+
 class Orchestrator:
     """Routes one objective through the full organization (the control plane)."""
 
@@ -156,12 +214,16 @@ class Orchestrator:
         config: "SiroConfig | None" = None,
         transport: "Transport | None" = None,
         retrieval_limit: int = 5,
+        research_archive: ResearchArchive | None = None,
     ) -> None:
         # Use `is None` (not `or`): JSONLArchive/ResearchMemory are falsy when empty.
         self._agents = agents
         self.sandbox = Sandbox() if sandbox is None else sandbox
         self.memory = ResearchMemory() if memory is None else memory
         self.archive = JSONLArchive() if archive is None else archive
+        # Research-task attempts live in their own archive (Goal 09), never mixed with the
+        # code-improver attempts archive.
+        self.research_archive = ResearchArchive() if research_archive is None else research_archive
         self.ledger = ModelCallLedger() if ledger is None else ledger
         self.budget = budget
         self.require_cross_model = require_cross_model
@@ -184,6 +246,7 @@ class Orchestrator:
         sandbox: Sandbox | None = None,
         references_path: str | Path = "docs/12_references.md",
         transport: "Transport | None" = None,
+        research_archive: ResearchArchive | None = None,
     ) -> "Orchestrator":
         """Bind every role to the provider its tier config selects.
 
@@ -204,6 +267,7 @@ class Orchestrator:
             references_path=references_path,
             config=config,
             transport=transport,
+            research_archive=research_archive,
         )
         orch._assert_cross_model_config(config)
         return orch
@@ -463,6 +527,277 @@ class Orchestrator:
             next_actions=next_actions,
         )
 
+    # --- the research cycle (Goal 09) ---------------------------------------
+    def _agents_for_research_task(self, task: ResearchTask) -> dict[str, Agent]:
+        """The role→agent map for a research task; the allowed edit surface is the task's
+        single baseline file (so the Implementation toolbox is scoped to exactly it)."""
+        if self._config is not None:
+            return build_agents(
+                self._config,
+                memory=self.memory,
+                task_id=task.task_id,
+                allowed_surfaces=[task.allowed_surface],
+                references_path=self.references_path,
+                transport=self._transport,
+            )
+        if self._agents is None:
+            raise ValueError("Orchestrator has neither a config nor an agents map.")
+        return self._agents
+
+    def run_research_cycle(self, objective: str, task_dir: str | Path) -> ResearchCycleResult:
+        """Run one full org cycle on a research-shaped task (Goal 09).
+
+        Same lifecycle and invariants as :meth:`run_cycle`, but the task's own controller-
+        owned ``eval.py`` — run in the offline sandbox — is the authority for promotion (a
+        typed :class:`MetricRecord`), not pytest pass/fail and not any model's self-judgment.
+        The held-out data in ``hidden/`` reaches only ``eval.py``, never a prompt, and the
+        static safety gate's no-file-I/O rule means a candidate cannot read it to leak it.
+        """
+        task = load_research_task(task_dir)
+        agents = self._agents_for_research_task(task)
+        cross_model = agents[SAFETY].provider != agents[IMPLEMENTATION].provider
+        if self.require_cross_model and not cross_model:
+            raise ValueError(
+                "Cross-model review required at this tier but Safety and Implementation "
+                f"share provider {agents[IMPLEMENTATION].provider!r}."
+            )
+
+        outputs: dict[str, AgentResult] = {}
+        escalations: list[str] = []
+        allowed_signatures = function_signatures(task.surface_code)
+        lessons = self.memory.lessons_block(task.task_id, limit=self.retrieval_limit)
+        module_name = Path(task.edit_surface).stem
+
+        # 1. Hypothesis — a falsifiable idea grounded in the brief + memory.
+        hyp = agents[HYPOTHESIS].run(
+            HypothesisInput(
+                objective=objective,
+                task_prompt=task.brief,
+                memory_summaries=lessons,
+                known_bottlenecks=self._bottlenecks(task.task_id),
+            )
+        )
+        outputs[HYPOTHESIS] = hyp
+        self._log(hyp, task.task_id)
+
+        # 2. Literature — ground + dedupe against references and memory.
+        lit = agents[LITERATURE].run(
+            LiteratureInput(
+                hypothesis=hyp.output.statement,
+                references=self._references_text(),
+                prior_summaries=lessons,
+            )
+        )
+        outputs[LITERATURE] = lit
+        self._log(lit, task.task_id)
+        triaged_in = not lit.output.is_duplicate
+        if not triaged_in:
+            escalations.append("literature flagged a duplicate/known result — triaged out")
+
+        # 3. Implementation — a patch limited to the task's single edit surface.
+        impl = agents[IMPLEMENTATION].run(
+            ImplementationInput(
+                experiment_plan=hyp.output.proposed_experiment or hyp.output.statement,
+                allowed_edit_surfaces=[task.allowed_surface],
+                baseline_code=task.surface_code,
+                module_name=module_name,
+                test_requirements=task.brief,
+                memory_lessons=lessons,
+            )
+        )
+        outputs[IMPLEMENTATION] = impl
+        self._log(impl, task.task_id)
+        code = extract_code(impl.output.code)
+        candidate = make_candidate(task, code, parent_id="seed")
+
+        # 4. Code-integrity + static safety scan (control plane) — before any execution.
+        static_report = GateReport(results=static_gates(code, allowed_signatures=allowed_signatures))
+
+        # 5. Execution plane — the task's fixed eval.py scores the seed and the candidate.
+        baseline_metric = run_research_eval(task, task.surface_code, self.sandbox)
+        metric: MetricRecord | None = None
+        if triaged_in and static_report.passed:
+            metric = run_research_eval(task, code, self.sandbox)
+
+        # 6. Evaluation Agent — narrate the metric move (objective record is authoritative).
+        direction = "higher" if task.higher_is_better else "lower"
+        eval_agent = agents[EVALUATION].run(
+            EvaluationInput(
+                baseline_metrics=_fmt_metric(baseline_metric),
+                candidate_metrics=_fmt_metric(metric),
+                regression_thresholds=(
+                    f"primary: {task.primary_name} ({direction} is better); promote only on a "
+                    "reproducible improvement over baseline"
+                ),
+            )
+        )
+        outputs[EVALUATION] = eval_agent
+        self._log(eval_agent, task.task_id)
+        objective_pass = _research_objective_pass(metric)
+        if eval_agent.output.pass_fail != objective_pass:
+            escalations.append(
+                "evaluation-agent narrative disagrees with objective metrics "
+                "(objective evaluator is authoritative)"
+            )
+
+        # 7. Safety Agent — cross-model review of the diff, tools, and eval results.
+        safety = agents[SAFETY].run(
+            SafetyInput(
+                code_diff=code,
+                tool_permissions=agents[IMPLEMENTATION].toolbox.names(),
+                logs=(metric.error if metric is not None else ""),
+                agent_outputs=f"hypothesis={hyp.output.statement}",
+                eval_results=_fmt_metric(metric),
+            )
+        )
+        outputs[SAFETY] = safety
+        self._log(safety, task.task_id)
+
+        # 8. Interpretation Agent — explain the result, draft a memory entry.
+        interp = agents[INTERPRETATION].run(
+            InterpretationInput(
+                hypothesis=hyp.output.statement,
+                experiment_plan=hyp.output.proposed_experiment,
+                metrics=_fmt_metric(metric),
+                logs="",
+                failure_report="" if objective_pass else _fmt_metric(metric),
+            )
+        )
+        outputs[INTERPRETATION] = interp
+        self._log(interp, task.task_id)
+
+        # 9. Promotion decision: objective gate + reproducibility + cross-model safety.
+        report, decision, reason = self._decide_research(
+            task,
+            code,
+            triaged_in=triaged_in,
+            static_report=static_report,
+            metric=metric,
+            baseline_metric=baseline_metric,
+            safety=safety,
+            escalations=escalations,
+        )
+
+        status = (
+            AttemptStatus.PROMOTED if decision is GateDecision.PASSED else AttemptStatus.REJECTED
+        )
+        attempt = ResearchAttempt(
+            attempt_id=_short_id(),
+            task_id=task.task_id,
+            family=task.family,
+            candidate=candidate,
+            metric=metric,
+            status=status,
+            reason=reason,
+            gates=report,
+        )
+        self.research_archive.append(attempt)
+
+        # 10. Memory Curator — write the durable record (controller writes, not the model).
+        mem = agents[MEMORY].run(
+            MemoryCuratorInput(
+                experiment_record=f"{candidate.candidate_id}: {_fmt_metric(metric)} -> {status.value}",
+                interpretation=interp.output.result_summary,
+                metadata=f"task={task.task_id} family={task.family} decision={decision.value}",
+            )
+        )
+        outputs[MEMORY] = mem
+        self._log(mem, task.task_id)
+        self._write_research_memory(attempt, mem)
+
+        # 11. Meta-Research — periodically propose a bounded, human-gated process change.
+        meta = agents[META_RESEARCH].run(
+            MetaResearchInput(
+                experiment_history=self._history_summary(task.task_id),
+                failure_modes=self._bottlenecks(task.task_id),
+            )
+        )
+        outputs[META_RESEARCH] = meta
+        self._log(meta, task.task_id)
+        ok, why = forbidden_meta_change(meta.output.target, meta.output.proposed_change)
+        if not ok:
+            escalations.append(f"meta-research proposal out of bounds ({why}) — recorded, not applied")
+
+        return ResearchCycleResult(
+            objective=objective,
+            task_id=task.task_id,
+            family=task.family,
+            budget_tier=self.budget_tier,
+            cross_model_review=cross_model,
+            attempt=attempt,
+            promotion_decision=decision,
+            gates=report,
+            metric=metric,
+            baseline_metric=baseline_metric,
+            agent_outputs=outputs,
+            escalations=escalations,
+            triaged_in=triaged_in,
+            next_actions=list(interp.output.follow_up_experiments),
+        )
+
+    def _decide_research(
+        self,
+        task: ResearchTask,
+        code: str,
+        *,
+        triaged_in: bool,
+        static_report: GateReport,
+        metric: MetricRecord | None,
+        baseline_metric: MetricRecord,
+        safety: AgentResult,
+        escalations: list[str],
+    ) -> tuple[GateReport, GateDecision, str]:
+        """Combine the objective metric gate with the cross-model safety review (Goal 09).
+
+        Objective first, exactly as :meth:`_decide`: a triaged-out, gate-failing,
+        non-reproducible, or non-improving candidate is rejected outright. A passing,
+        improving, reproducible candidate that the Safety reviewer flags is **escalated**,
+        not promoted — disagreement is a signal, not a tie-break.
+        """
+        if not triaged_in:
+            return static_report, GateDecision.FAILED, "triaged out before execution (duplicate)"
+        if static_report.failed:
+            return static_report, GateDecision.FAILED, static_report.first_failure_reason()
+        if metric is None or not metric.reproducible or not metric.passed:
+            return (
+                static_report,
+                GateDecision.FAILED,
+                "candidate did not produce a passing, reproducible metric",
+            )
+        improved, why = research_improves(metric, baseline_metric)
+        if not improved:
+            return static_report, GateDecision.FAILED, f"no improvement over baseline ({why})"
+
+        repro = research_reproducibility_gate(task, code, self.sandbox)
+        report = GateReport(results=[*static_report.results, repro])
+        if report.failed:
+            return report, GateDecision.FAILED, report.first_failure_reason()
+
+        safety_block = (
+            safety.output.escalate or safety.output.classification is SafetyClassification.UNSAFE
+        )
+        if safety_block:
+            escalations.append(
+                "cross-model disagreement: objective gate promotes but the Safety reviewer "
+                f"flagged it ({safety.output.classification.value}, escalate="
+                f"{safety.output.escalate}) — escalated for human review, not promoted"
+            )
+            return report, GateDecision.ESCALATED, (
+                "escalated: safety reviewer disagreed with a gate-passing candidate"
+            )
+        return report, GateDecision.PASSED, "promoted: objective gate passed and safety review clear"
+
+    def _write_research_memory(self, attempt: ResearchAttempt, mem: AgentResult) -> None:
+        """Derive the typed entry (controller) and overlay only the curator's data fields."""
+        entry = entry_from_research_attempt(attempt)
+        entry = entry.model_copy(
+            update={
+                "strategy": mem.output.strategy or entry.strategy,
+                "follow_up": mem.output.follow_up or entry.follow_up,
+            }
+        )
+        self.memory.record_entry(entry)
+
     # --- decision logic -----------------------------------------------------
     def _decide(
         self,
@@ -565,4 +900,4 @@ class Orchestrator:
         self.memory.record_entry(entry)
 
 
-__all__ = ["Orchestrator", "CycleResult"]
+__all__ = ["Orchestrator", "CycleResult", "ResearchCycleResult"]

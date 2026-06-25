@@ -1,0 +1,98 @@
+[
+  {
+    "text": "this was a great movie",
+    "label": 1
+  },
+  {
+    "text": "absolutely loved it, wonderful and fun",
+    "label": 1
+  },
+  {
+    "text": "a brilliant and moving performance",
+    "label": 1
+  },
+  {
+    "text": "the food was delicious and the service excellent",
+    "label": 1
+  },
+  {
+    "text": "i really enjoyed this, highly recommend",
+    "label": 1
+  },
+  {
+    "text": "fantastic experience from start to finish",
+    "label": 1
+  },
+  {
+    "text": "such a charming and delightful story",
+    "label": 1
+  },
+  {
+    "text": "the product works perfectly, very happy",
+    "label": 1
+  },
+  {
+    "text": "an amazing and inspiring book",
+    "label": 1
+  },
+  {
+    "text": "good acting and a satisfying ending",
+    "label": 1
+  },
+  {
+    "text": "warm, clever and genuinely funny",
+    "label": 1
+  },
+  {
+    "text": "best purchase i have made all year",
+    "label": 1
+  },
+  {
+    "text": "terrible and boring",
+    "label": 0
+  },
+  {
+    "text": "i hated every minute of it",
+    "label": 0
+  },
+  {
+    "text": "a complete waste of time and money",
+    "label": 0
+  },
+  {
+    "text": "the food was cold and disgusting",
+    "label": 0
+  },
+  {
+    "text": "awful service, never coming back",
+    "label": 0
+  },
+  {
+    "text": "dull, slow and poorly written",
+    "label": 0
+  },
+  {
+    "text": "this was not good at all",
+    "label": 0
+  },
+  {
+    "text": "the product broke after one day",
+    "label": 0
+  },
+  {
+    "text": "a disappointing and forgettable film",
+    "label": 0
+  },
+  {
+    "text": "cheap, ugly and badly made",
+    "label": 0
+  },
+  {
+    "text": "not worth the price, very frustrating",
+    "label": 0
+  },
+  {
+    "text": "the worst experience i have had",
+    "label": 0
+  }
+]

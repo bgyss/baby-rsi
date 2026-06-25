@@ -1,0 +1,8 @@
+{
+  "family": "policy",
+  "objective": "Improve the rule-based sentiment policy to raise aggregate pass rate over a held-out benchmark.",
+  "edit_surface": "policy.py",
+  "primary_metric": "accuracy",
+  "higher_is_better": true,
+  "budget_seconds": 10.0
+}
