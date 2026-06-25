@@ -234,6 +234,7 @@ class Controller:
                 output_tokens=usage.output_tokens,
                 cost_usd=usage.cost_usd,
                 latency_ms=usage.latency_ms or latency_ms,
+                pricing_metadata=usage.pricing_metadata,
                 experiment_id=task_id,
             )
         )

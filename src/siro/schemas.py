@@ -451,6 +451,7 @@ class ModelCall(BaseModel):
     output_tokens: int = 0
     cost_usd: float = 0.0
     latency_ms: float = 0.0
+    pricing_metadata: dict[str, object] = Field(default_factory=dict)
     experiment_id: str = ""
     created_at: datetime = Field(default_factory=_utcnow)
 

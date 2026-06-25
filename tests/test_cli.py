@@ -28,7 +28,14 @@ def test_subcommands_registered():
     parser = build_parser()
     # argparse stores the subparser choices; all three must be present.
     choices = parser._subparsers._group_actions[0].choices  # type: ignore[attr-defined]
-    assert {"run-task", "run-org", "summarize-runs", "propose-meta-change"} <= set(choices)
+    assert {
+        "run-task",
+        "run-org",
+        "summarize-runs",
+        "propose-meta-change",
+        "check-docs",
+        "pricing-audit",
+    } <= set(choices)
 
 
 def test_summarize_runs_reads_archive(tmp_path, capsys):

@@ -69,6 +69,7 @@ class Usage:
     output_tokens: int = 0
     cost_usd: float = 0.0
     latency_ms: float = 0.0
+    pricing_metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def total_tokens(self) -> int:

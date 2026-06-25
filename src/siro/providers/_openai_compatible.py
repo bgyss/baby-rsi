@@ -98,6 +98,7 @@ def parse_response(
         output_tokens=output_tokens,
         cost_usd=pricing.cost_usd(input_tokens, output_tokens),
         latency_ms=latency_ms,
+        pricing_metadata=pricing.metadata(),
     )
     return ModelResponse(
         text=text,

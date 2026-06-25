@@ -289,6 +289,8 @@ def test_loop_records_tokens_and_cost_to_ledger(tmp_path):
     assert len(rows) == 3
     assert all(r.input_tokens == 100 and r.output_tokens == 100 for r in rows)
     assert all(r.cost_usd > 0 for r in rows)  # cost estimate recorded per call
+    assert all(r.pricing_metadata["input_per_mtok"] == 10.0 for r in rows)
+    assert all(r.pricing_metadata["source_type"] == "default" for r in rows)
 
 
 def test_budget_ceiling_halts_and_escalates_the_loop(tmp_path):
@@ -313,7 +315,7 @@ def test_budget_ceiling_halts_and_escalates_the_loop(tmp_path):
 
 
 def test_pricing_override_and_resolution():
-    assert Pricing.resolve("anthropic", "claude-opus-4-8").input_per_mtok == 15.0
+    assert Pricing.resolve("anthropic", "claude-opus-4-8").input_per_mtok == 5.0
     assert Pricing.resolve("local", "anything").cost_usd(1000, 1000) == 0.0
     over = Pricing.resolve("openai", "unknown", override=(2.0, 4.0))
     assert over.cost_usd(1_000_000, 1_000_000) == 6.0

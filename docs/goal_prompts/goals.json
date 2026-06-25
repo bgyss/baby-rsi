@@ -120,11 +120,11 @@
     {
       "number": 14,
       "title": "Pricing audit and budget calibration",
-      "status": "specified",
+      "status": "implemented",
       "category": "Cross-tier hardening",
       "prompt_path": "docs/goal_prompts/goal_14_pricing_audit_and_budget_calibration.md",
-      "artifacts": ["src/siro/providers/pricing.py", "config/", "reports/"],
-      "summary": "Specifies price override metadata, source-backed pricing audits, and calibrated budget reporting."
+      "artifacts": ["src/siro/providers/pricing.py", "src/siro/cli.py", "config/"],
+      "summary": "Adds config-level price override metadata, pricing-audit reporting, and ledger metadata for cost estimates."
     },
     {
       "number": 15,

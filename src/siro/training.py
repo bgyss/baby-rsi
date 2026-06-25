@@ -393,6 +393,7 @@ class TrainingController:
                     output_tokens=usage.output_tokens if usage else 0,
                     cost_usd=usage.cost_usd if usage else 0.0,
                     latency_ms=(usage.latency_ms if usage and usage.latency_ms else latency_ms),
+                    pricing_metadata=usage.pricing_metadata if usage else {},
                     experiment_id=task_id,
                 )
             )

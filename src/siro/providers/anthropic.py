@@ -130,6 +130,7 @@ class AnthropicClient(BaseModelClient):
             output_tokens=output_tokens,
             cost_usd=self.pricing.cost_usd(input_tokens, output_tokens),
             latency_ms=latency_ms,
+            pricing_metadata=self.pricing.metadata(),
         )
         return ModelResponse(
             text=text,

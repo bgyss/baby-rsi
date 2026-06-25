@@ -13,6 +13,8 @@ cycle uses:
                             both human-gated, deploy needs cross-model review.
 - ``check-docs``          — verify README/goal manifest consistency and docs privacy
                             patterns (Goal 13).
+- ``pricing-audit``       — report resolved provider pricing, review freshness, and
+                            representative cycle costs (Goal 14).
 - ``summarize-runs``      — reflect on the archive (real: counts + pass rate + best).
 - ``summarize-research``  — per-family summary of the research suite (Goal 09).
 - ``propose-meta-change`` — propose a process change (Goal 05).
@@ -28,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 from collections import Counter
+from datetime import date
 from pathlib import Path
 
 from . import __version__
@@ -61,6 +64,7 @@ from .model_training import (
 )
 from .orchestrator import Orchestrator
 from .providers import ModelClient
+from .providers.pricing import Pricing
 from .research import (
     DEFAULT_RESEARCH_ATTEMPTS_PATH,
     DEFAULT_RESEARCH_TASKS_DIR,
@@ -653,6 +657,72 @@ def _cmd_check_docs(args: argparse.Namespace) -> int:
     return 1
 
 
+def _representative_costs(pricing: Pricing) -> dict[str, float]:
+    cycles = {
+        "small": (10_000, 2_000),
+        "medium": (100_000, 20_000),
+        "heavy": (1_000_000, 200_000),
+    }
+    return {
+        name: pricing.cost_usd(input_tokens, output_tokens)
+        for name, (input_tokens, output_tokens) in cycles.items()
+    }
+
+
+def _cmd_pricing_audit(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    threshold = args.stale_days
+    today = date.today()
+    errors = 0
+
+    print(f"Pricing audit: {args.config} (tier {config.tier})")
+    print(
+        "Budget ceilings: "
+        f"run=${config.budget.max_usd_per_run if config.budget.max_usd_per_run is not None else 'unbounded'} "
+        f"day=${config.budget.max_usd_per_day if config.budget.max_usd_per_day is not None else 'unbounded'} "
+        f"tokens/call={config.budget.max_tokens_per_call if config.budget.max_tokens_per_call is not None else 'unbounded'}"
+    )
+    print("Representative cycle costs use input/output token counts: small=10k/2k, medium=100k/20k, heavy=1M/200k.")
+
+    for key, provider in sorted(config.providers.items()):
+        backend = provider.backend.lower()
+        pricing = Pricing.resolve(backend, provider.name, provider.prices)
+        age = pricing.review_age_days(today)
+        costs = _representative_costs(pricing)
+        warnings: list[str] = []
+
+        if pricing.missing:
+            warnings.append("missing-price")
+        local_free = backend in {"local", "llamacpp"} and pricing.cost_usd(1, 1) == 0.0
+        if not local_free:
+            if age is None:
+                warnings.append("missing-review-date")
+            elif age > threshold:
+                warnings.append(f"stale-review:{age}d")
+        if warnings:
+            errors += 1
+
+        reviewed = pricing.last_reviewed or "unreviewed"
+        cached = (
+            "n/a"
+            if pricing.cached_input_per_mtok is None
+            else f"${pricing.cached_input_per_mtok:g}/M"
+        )
+        print(
+            f"{key}: backend={provider.backend} model={provider.name} "
+            f"source={pricing.source_type} input=${pricing.input_per_mtok:g}/M "
+            f"output=${pricing.output_per_mtok:g}/M cached_input={cached} "
+            f"reviewed={reviewed} source_note={pricing.source or 'n/a'} "
+            f"small=${costs['small']:.4f} medium=${costs['medium']:.4f} "
+            f"heavy=${costs['heavy']:.4f} warnings={','.join(warnings) or 'none'}"
+        )
+
+    if args.strict and errors:
+        print(f"STRICT FAIL: {errors} provider price record(s) need review.")
+        return 1
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="siro",
@@ -1007,6 +1077,29 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_docs.set_defaults(func=_cmd_check_docs)
+
+    p_pricing = sub.add_parser(
+        "pricing-audit",
+        help="Audit configured model pricing, review freshness, and budget ceilings (Goal 14).",
+    )
+    p_pricing.add_argument(
+        "--config",
+        type=Path,
+        default=Path("config/tier1.frontier.yaml"),
+        help="Tier/provider config to audit (default: config/tier1.frontier.yaml).",
+    )
+    p_pricing.add_argument(
+        "--stale-days",
+        type=int,
+        default=90,
+        help="Review age threshold for stale pricing warnings (default: 90).",
+    )
+    p_pricing.add_argument(
+        "--strict",
+        action="store_true",
+        help="Exit nonzero when any configured provider has missing or stale pricing.",
+    )
+    p_pricing.set_defaults(func=_cmd_pricing_audit)
 
     p_sum = sub.add_parser("summarize-runs", help="Summarize an attempts archive.")
     p_sum.add_argument(
