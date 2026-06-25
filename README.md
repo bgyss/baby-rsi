@@ -58,7 +58,7 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goals 01–11 are implemented; Goal 12 is a written specification, not yet built. Every
+Goals 01–12 are implemented. Every
 implemented goal reuses the same lifecycle, gates, evaluator, and memory schema — only what
 fills the roles changes, by **config not code**, as the tier rises. Each entry below names
 its goal, the modules/artifacts it added, and what it does.
@@ -136,9 +136,17 @@ its goal, the modules/artifacts it added, and what it does.
   consistent. `CheckpointStore` writes atomic per-experiment checkpoints so a halt loses no
   work and resumes. Plane isolation is unchanged at scale (offline, credential-free). CLI:
   `run-scaled --compute-tier`.
-- **Goal 12 — Governed model-training** *(spec, not yet implemented)*: weight-update
-  experiments behind governance + a stability precondition; trained weights are artifacts with
-  lineage, never auto-deployed.
+- **Goal 12 — Governed model-training** (`model_training`): the strongest loop, fully
+  bounded. A `GovernedModelTrainer` produces model **weights** (a deterministic, offline,
+  pure-Python trainer) only when (a) the capability is enabled at Tier 2, (b) the
+  **stability precondition** is met — the evaluator/audit/gates are green, checked *before*
+  and *independent of* any approval — and (c) a human-approved `MODEL_TRAIN` request is on
+  record. Weights are stored as a `TrainedModelArtifact` with full reproducible lineage
+  (base-model hash, data id + seed, config, code version) and archived (failures too). A
+  trained model is **never** auto-bound to a role: `deploy_model` requires a *separate*
+  `MODEL_DEPLOY` approval **and** cross-model review (reviewer provider ≠ the role's
+  implementation provider), recorded in a `ModelRegistry`. Disabled entirely at Tier ≤ 1.
+  CLI: `train-model`, `deploy-model`.
 
 The canonical interface is `uv run siro` (mise tasks are thin wrappers):
 
@@ -157,6 +165,8 @@ uv run siro propose-meta-change runs/attempts.jsonl   # meta-research outer loop
 uv run siro request-approval budget_increase --target max_usd_per_run --payload '{"max_usd_per_run":20}'  # Tier 2 governance request (Goal 10)
 uv run siro approve <request_id> --by <human>         # human-only grant; list-approvals/deny/revoke too (Goal 10)
 uv run siro run-scaled --compute-tier 1               # eval under a governed compute budget (Goal 11)
+uv run siro train-model exp1                          # governed weight-update experiment (Goal 12)
+uv run siro deploy-model <artifact_id> implementation --implementation-provider anthropic --reviewer-provider openai  # gated deploy (Goal 12)
 ```
 
 ## Suggested use

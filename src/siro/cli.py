@@ -9,6 +9,8 @@ cycle uses:
 - ``run-org``             — run one full frontier-org research cycle (Goal 08).
 - ``run-research``        — run the org on research-shaped task(s) (Goal 09).
 - ``run-scaled``          — run an eval under a governed compute budget (Goal 11).
+- ``train-model`` / ``deploy-model`` — governed weight-update experiments (Goal 12);
+                            both human-gated, deploy needs cross-model review.
 - ``summarize-runs``      — reflect on the archive (real: counts + pass rate + best).
 - ``summarize-research``  — per-family summary of the research suite (Goal 09).
 - ``propose-meta-change`` — propose a process change (Goal 05).
@@ -40,6 +42,20 @@ from .governance import (
 from .memory import ResearchMemory, failure_signature
 from .meta import MetaChangeStore, MetaResearcher
 from .model_client import LocalOpenAIClient
+from .model_training import (
+    DEFAULT_ARTIFACT_STORE_DIR,
+    DEFAULT_MODEL_ARTIFACTS_PATH,
+    DEFAULT_MODEL_REGISTRY_PATH,
+    ArtifactStore,
+    DeploymentError,
+    GovernedModelTrainer,
+    ModelArtifactArchive,
+    ModelRegistry,
+    ModelTrainingDisabled,
+    StabilityError,
+    assess_stability,
+    deploy_model,
+)
 from .orchestrator import Orchestrator
 from .providers import ModelClient
 from .research import (
@@ -532,6 +548,92 @@ def _cmd_run_scaled(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- governed model-training (Tier 2, Goal 12) ----------------------------- #
+
+
+def _cmd_train_model(args: argparse.Namespace) -> int:
+    """Run a governed weight-update experiment (Goal 12).
+
+    Refused below Tier 2, when the scaffold is not stable (independent of approval), or
+    without a human-approved MODEL_TRAIN request. Produces a weight artifact with full
+    lineage; it is **never** auto-deployed — binding to a role is a separate `deploy-model`.
+    """
+    config = load_config(args.config)
+    gate = GovernanceGate.from_config(config)
+    trainer = GovernedModelTrainer(
+        gate,
+        archive=ModelArtifactArchive(args.archive),
+        store=ArtifactStore(args.store),
+    )
+    stability = assess_stability(open_incidents=args.open_incidents)
+    train_config = {"learning_rate": args.learning_rate, "epochs": args.epochs}
+    print(f"config: tier {config.tier} ({args.config}); governance "
+          f"{'on' if gate.enabled else 'off (model-training is Tier 2)'}; "
+          f"stability {'green' if stability.stable else 'RED ' + str(stability.failures)}")
+    try:
+        artifact = trainer.train(
+            args.experiment_id,
+            train_config,
+            compute_tier=args.compute_tier,
+            actor=args.actor,
+            rationale=args.rationale,
+            stability=stability,
+        )
+    except ModelTrainingDisabled as exc:
+        print(f"BLOCKED — {exc}")
+        return 2
+    except StabilityError as exc:
+        print(f"BLOCKED — {exc}")
+        return 2
+    except GovernanceDenied as exc:
+        print(f"BLOCKED — weight-update experiment needs human approval "
+              f"(request {exc.request.request_id}).")
+        print(f"Approve with: siro approve {exc.request.request_id} --by <human>")
+        return 2
+
+    print(f"trained artifact {artifact.artifact_id}  passed={artifact.passed}  "
+          f"val_loss={artifact.val_loss:g}")
+    print(f"  lineage: base={artifact.base_model_hash} data={artifact.data_id}@{artifact.data_seed} "
+          f"code={artifact.code_version}")
+    print(f"  stored in {args.store}; archived to {args.archive}")
+    print("NOT deployed — `siro deploy-model` is a separate approval + cross-model review.")
+    return 0
+
+
+def _cmd_deploy_model(args: argparse.Namespace) -> int:
+    """Bind a trained artifact to an agent role — only with approval + cross-model review."""
+    config = load_config(args.config)
+    gate = GovernanceGate.from_config(config)
+    artifact = ArtifactStore(args.store).load(args.artifact_id)
+    if artifact is None:
+        print(f"no trained artifact {args.artifact_id!r} in {args.store}.")
+        return 2
+    registry = ModelRegistry(args.registry)
+    try:
+        deployment = deploy_model(
+            gate,
+            registry,
+            artifact,
+            args.role,
+            implementation_provider=args.implementation_provider,
+            reviewer_provider=args.reviewer_provider,
+            actor=args.actor,
+        )
+    except DeploymentError as exc:
+        print(f"BLOCKED — {exc}")
+        return 2
+    except GovernanceDenied as exc:
+        print(f"BLOCKED — deploying to role {args.role!r} needs human approval "
+              f"(request {exc.request.request_id}).")
+        print(f"Approve with: siro approve {exc.request.request_id} --by <human>")
+        return 2
+
+    print(f"DEPLOYED artifact {deployment.artifact_id} -> role {deployment.role} "
+          f"(approver {deployment.approver}, reviewer {deployment.reviewer_provider})")
+    print(f"Recorded to {args.registry}.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="siro",
@@ -817,6 +919,54 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Checkpoint directory (default: {DEFAULT_CHECKPOINT_DIR}).",
     )
     p_scaled.set_defaults(func=_cmd_run_scaled)
+
+    # --- governed model-training (Tier 2, Goal 12) -------------------------
+    p_train_model = sub.add_parser(
+        "train-model",
+        help="Run a governed weight-update experiment (Goal 12).",
+    )
+    p_train_model.add_argument("experiment_id", help="Experiment / lineage id.")
+    p_train_model.add_argument("--learning-rate", type=float, default=0.1)
+    p_train_model.add_argument("--epochs", type=int, default=300)
+    p_train_model.add_argument("--compute-tier", type=int, default=0)
+    p_train_model.add_argument(
+        "--open-incidents",
+        type=int,
+        default=0,
+        help="Open safety incidents (>0 fails the stability precondition).",
+    )
+    p_train_model.add_argument("--actor", default="operator")
+    p_train_model.add_argument("--rationale", default="")
+    p_train_model.add_argument(
+        "--config", type=Path, default=Path("config/tier2.governed.yaml")
+    )
+    p_train_model.add_argument("--archive", type=Path, default=DEFAULT_MODEL_ARTIFACTS_PATH)
+    p_train_model.add_argument("--store", type=Path, default=DEFAULT_ARTIFACT_STORE_DIR)
+    p_train_model.set_defaults(func=_cmd_train_model)
+
+    p_deploy = sub.add_parser(
+        "deploy-model",
+        help="Bind a trained artifact to a role — approval + cross-model review (Goal 12).",
+    )
+    p_deploy.add_argument("artifact_id", help="The trained artifact id to deploy.")
+    p_deploy.add_argument("role", help="The agent role to bind it to.")
+    p_deploy.add_argument(
+        "--implementation-provider",
+        required=True,
+        help="The role's current implementation provider (the reviewer must differ).",
+    )
+    p_deploy.add_argument(
+        "--reviewer-provider",
+        required=True,
+        help="The cross-model reviewer's provider (must differ from implementation).",
+    )
+    p_deploy.add_argument("--actor", default="operator")
+    p_deploy.add_argument(
+        "--config", type=Path, default=Path("config/tier2.governed.yaml")
+    )
+    p_deploy.add_argument("--store", type=Path, default=DEFAULT_ARTIFACT_STORE_DIR)
+    p_deploy.add_argument("--registry", type=Path, default=DEFAULT_MODEL_REGISTRY_PATH)
+    p_deploy.set_defaults(func=_cmd_deploy_model)
 
     p_sum = sub.add_parser("summarize-runs", help="Summarize an attempts archive.")
     p_sum.add_argument(

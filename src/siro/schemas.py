@@ -394,6 +394,49 @@ class ResearchAttempt(BaseModel):
     created_at: datetime = Field(default_factory=_utcnow)
 
 
+class TrainedModelArtifact(BaseModel):
+    """A model-training (weight-update) artifact with full reproducible lineage (Goal 12).
+
+    The output of a governed weight-update experiment: the produced ``weights`` plus the
+    lineage needed to reproduce them (the base-model hash it started from, the fixed data id
+    + seed it trained/validated on, the candidate ``train_config``, and the code version) and
+    the held-out objective metric that scored it. Stored as an artifact and archived; a
+    failed run is recorded too (``passed=False``). An artifact is **never** auto-bound to an
+    agent role — deploying it is a separate, human-approved governance action.
+    """
+
+    artifact_id: str
+    experiment_id: str
+    base_model_hash: str
+    data_id: str
+    data_seed: int
+    train_config: dict = Field(default_factory=dict)
+    code_version: str = ""
+    weights: list[float] = Field(default_factory=list)
+    val_loss: float = 0.0
+    passed: bool = False
+    reproducible: bool = True
+    reason: str = ""
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class ModelDeployment(BaseModel):
+    """A record of binding a trained model artifact to an agent role (Goal 12).
+
+    Created only by an explicit, human-approved ``MODEL_DEPLOY`` governance action with
+    cross-model review (the reviewer's provider differs from the role's implementation
+    provider). A trained model never reaches a role without one of these on record.
+    """
+
+    deployment_id: str
+    artifact_id: str
+    role: str
+    approver: str
+    reviewer_provider: str
+    implementation_provider: str
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
 class ModelCall(BaseModel):
     """Audit-ledger row appended to ``runs/model_calls.jsonl`` for every model call.
 
@@ -430,6 +473,7 @@ class GovernedAction(str, Enum):
     PERMISSION_EXPANSION = "permission_expansion"   # widen tool permissions / edit surface
     EXECUTION_PLANE_NETWORK = "execution_plane_network"
     AUTONOMOUS_INSTALL = "autonomous_install"
+    MODEL_TRAIN = "model_train"                     # run a weight-update experiment (Goal 12)
     MODEL_DEPLOY = "model_deploy"                   # bind a trained model to an agent role (Goal 12)
     HIGH_RISK_ACTION = "high_risk_action"           # any other irreversible / high-budget action
 
@@ -509,6 +553,8 @@ __all__ = [
     "ApprovalRequest",
     "ApprovalDecision",
     "ApprovalRevocation",
+    "TrainedModelArtifact",
+    "ModelDeployment",
     "TaskSpec",
     "Candidate",
     "EvaluationResult",
