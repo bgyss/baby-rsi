@@ -37,6 +37,10 @@ def test_subcommands_registered():
         "pricing-audit",
         "run-scaled",
         "sandbox-backends",
+        "storage-migrate",
+        "storage-import",
+        "storage-export",
+        "storage-verify",
     } <= set(choices)
 
 
@@ -45,6 +49,45 @@ def test_sandbox_backends_lists_local_and_hard(capsys):
     out = capsys.readouterr().out
     assert "local: available" in out
     assert "linux_guarded" in out
+
+
+def test_storage_migrate_import_export_verify_roundtrip(tmp_path, capsys):
+    from siro.archive import JSONLArchive
+    from siro.schemas import Attempt, AttemptStatus, Candidate
+
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    archive = JSONLArchive(runs / "attempts.jsonl")
+    for i in range(3):
+        archive.append(
+            Attempt(
+                attempt_id=f"a{i}",
+                task_id="t",
+                candidate=Candidate(candidate_id=f"c{i}", task_id="t", code="x = 1"),
+                status=AttemptStatus.REJECTED,
+                reason="1 test(s) failing",
+            )
+        )
+    db = tmp_path / "siro.db"
+
+    assert main(["storage-migrate", "--store", str(db)]) == 0
+    assert "schema 0 -> 2" in capsys.readouterr().out
+
+    assert main(["storage-import", "--store", str(db), "--from-dir", str(runs)]) == 0
+    assert "attempts: 3 new" in capsys.readouterr().out
+
+    # summarize-runs works against the SQLite store, not just JSONL.
+    assert main(["summarize-runs", "--store", str(db)]) == 0
+    assert "Attempts: 3" in capsys.readouterr().out
+
+    out_dir = tmp_path / "export"
+    assert main(["storage-export", "--store", str(db), "--to-dir", str(out_dir)]) == 0
+    capsys.readouterr()
+    exported = (out_dir / "attempts.jsonl").read_text().splitlines()
+    assert sorted(exported) == sorted((runs / "attempts.jsonl").read_text().splitlines())
+
+    # Hash-chain verification passes on an untampered store.
+    assert main(["storage-verify", "--store", str(db)]) == 0
 
 
 def test_summarize_runs_reads_archive(tmp_path, capsys):

@@ -148,6 +148,16 @@ Refinement:
 - Add run IDs, cycle IDs, lineage IDs, and idempotency keys everywhere.
 - Add hash chaining or signed records for governance and artifact ledgers.
 
+**Resolved by Goal 16 (SQLite slice).** `src/siro/storage.py` adds a storage interface over
+every append-only stream with two backends: JSONL stays the default human-readable format, and
+an opt-in SQLite backend adds schema migrations (validated on read via the typed models),
+idempotency keys (repeated writes dedupe), and hash chaining for the governance and artifact
+streams, with byte-compatible JSONL export/import (`storage-migrate`/`-import`/`-export`/
+`-verify`; summaries read either backend). A stable `call_id` was added to `ModelCall` (the one
+record lacking an id); attempt/cycle/lineage IDs already existed. Postgres for production
+coordination remains future work, but the interface is backend-agnostic so it slots in without
+touching call sites.
+
 ### The benchmark suite is still too small
 
 The seeded research suite proves the lifecycle across algorithm, training, and policy

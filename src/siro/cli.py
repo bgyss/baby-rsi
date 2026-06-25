@@ -11,6 +11,8 @@ cycle uses:
 - ``run-scaled``          — run an eval under a governed compute budget (Goal 11);
                             ``--backend`` selects the isolation backend (Goal 15).
 - ``sandbox-backends``    — list resource-isolation backends + availability (Goal 15).
+- ``storage-migrate`` / ``storage-import`` / ``storage-export`` / ``storage-verify`` —
+                            durable SQLite research store + JSONL round-trip (Goal 16).
 - ``train-model`` / ``deploy-model`` — governed weight-update experiments (Goal 12);
                             both human-gated, deploy needs cross-model review.
 - ``check-docs``          — verify README/goal manifest consistency and docs privacy
@@ -90,6 +92,12 @@ from .schemas import (
     GovernedAction,
     MetaChangeRecord,
     MetaRecommendation,
+)
+from .storage import (
+    DEFAULT_STORE_PATH,
+    STREAMS,
+    JSONLStore,
+    SQLiteStore,
 )
 from .training import (
     DEFAULT_BUDGET_SECONDS,
@@ -290,14 +298,23 @@ def _cmd_run_research(args: argparse.Namespace) -> int:
 def _cmd_summarize_research(args: argparse.Namespace) -> int:
     """Per-family suite summary (Goal 09 acceptance): pass rate, median cycles to success,
     safety-gate failures, token/USD spend, and strategy diversity."""
-    attempts = ResearchArchive(args.path).read_all()
+    if args.store is not None:
+        store = SQLiteStore(args.store, migrate=False)
+        attempts = store.read("research_attempts")
+        ledger_rows = store.read("model_calls")
+        source = f"{args.store} (sqlite)"
+    else:
+        attempts = ResearchArchive(args.path).read_all()
+        ledger_rows = (
+            ModelCallLedger(args.model_calls).read_all() if args.model_calls.exists() else []
+        )
+        source = str(args.path)
     if not attempts:
-        print(f"No research attempts found in {args.path}.")
+        print(f"No research attempts found in {source}.")
         return 0
-    ledger_rows = ModelCallLedger(args.model_calls).read_all() if args.model_calls.exists() else []
     summaries = summarize_research(attempts, ledger_rows=ledger_rows)
 
-    print(f"Research attempts: {len(attempts)}  (from {args.path})")
+    print(f"Research attempts: {len(attempts)}  (from {source})")
     for family, s in summaries.items():
         cycles = (
             f"{s.median_cycles_to_success:.1f}"
@@ -314,10 +331,15 @@ def _cmd_summarize_research(args: argparse.Namespace) -> int:
 
 
 def _cmd_summarize_runs(args: argparse.Namespace) -> int:
-    archive = JSONLArchive(args.path)
-    attempts = archive.read_all()
+    if args.store is not None:
+        store = SQLiteStore(args.store, migrate=False)
+        attempts = store.read("attempts")
+        source = f"{args.store} (sqlite)"
+    else:
+        attempts = JSONLArchive(args.path).read_all()
+        source = str(args.path)
     if not attempts:
-        print(f"No attempts found in {args.path}.")
+        print(f"No attempts found in {source}.")
         return 0
 
     status_counts = Counter(a.status.value for a in attempts)
@@ -327,7 +349,7 @@ def _cmd_summarize_runs(args: argparse.Namespace) -> int:
     pass_rate = (passed_tests / total_tests) if total_tests else 0.0
     best = select_best(attempts)
 
-    print(f"Attempts: {len(attempts)}  (from {args.path})")
+    print(f"Attempts: {len(attempts)}  (from {source})")
     for status, count in sorted(status_counts.items()):
         print(f"  {status}: {count}")
     print(f"Test pass rate: {pass_rate:.1%}  ({passed_tests}/{total_tests})")
@@ -588,6 +610,69 @@ def _cmd_sandbox_backends(args: argparse.Namespace) -> int:
         mark = "available" if usable else "unavailable"
         print(f"  {name}: {mark} — {reason}")
     return 0
+
+
+# --- durable storage (Goal 16) --------------------------------------------- #
+
+
+def _cmd_storage_migrate(args: argparse.Namespace) -> int:
+    """Create or migrate the SQLite store schema to the latest version (Goal 16)."""
+    store = SQLiteStore(args.store, migrate=False)
+    before = store.schema_version()
+    after = store.migrate()
+    print(f"storage: {args.store} (sqlite)  schema {before} -> {after}")
+    return 0
+
+
+def _cmd_storage_import(args: argparse.Namespace) -> int:
+    """Import the existing JSONL archives into the SQLite store (idempotent, Goal 16)."""
+    store = SQLiteStore(args.store)
+    jsonl = JSONLStore(args.from_dir)
+    total = 0
+    print(f"storage import -> {args.store} (sqlite)")
+    for stream in STREAMS:
+        src = jsonl.path_for(stream)
+        if not src.exists():
+            continue
+        inserted = store.import_jsonl(stream, src)
+        total += inserted
+        print(f"  {stream}: {inserted} new record(s) from {src}")
+    print(f"imported {total} new record(s) (duplicates skipped by idempotency key)")
+    return 0
+
+
+def _cmd_storage_export(args: argparse.Namespace) -> int:
+    """Export the SQLite store back to JSONL files compatible with existing readers (Goal 16)."""
+    store = SQLiteStore(args.store, migrate=False)
+    out_dir = args.to_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    total = 0
+    print(f"storage export {args.store} (sqlite) -> {out_dir}/")
+    for stream in STREAMS:
+        path = out_dir / f"{stream}.jsonl"
+        count = store.export_jsonl(stream, path)
+        if count:
+            total += count
+            print(f"  {stream}: {count} record(s) -> {path}")
+    print(f"exported {total} record(s)")
+    return 0
+
+
+def _cmd_storage_verify(args: argparse.Namespace) -> int:
+    """Verify the tamper-evident hash chains in the SQLite store (Goal 16)."""
+    store = SQLiteStore(args.store, migrate=False)
+    streams = [args.stream] if args.stream else [s for s, spec in STREAMS.items() if spec.hash_chained]
+    ok = True
+    print(f"storage verify {args.store} (sqlite)")
+    for stream in streams:
+        result = store.verify_chain(stream)
+        if not result.supported:
+            print(f"  {stream}: not hash-chained")
+            continue
+        status = "OK" if result.ok else f"BROKEN at seq {result.broken_seq}"
+        print(f"  {stream}: {status}  ({result.checked} record(s))")
+        ok = ok and result.ok
+    return 0 if ok else 1
 
 
 # --- governed model-training (Tier 2, Goal 12) ----------------------------- #
@@ -945,6 +1030,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("runs/model_calls.jsonl"),
         help="Model-call audit ledger, for per-family spend (default: runs/model_calls.jsonl).",
     )
+    p_sumr.add_argument(
+        "--store",
+        type=Path,
+        default=None,
+        help="Read research attempts + spend from a SQLite store instead of JSONL (Goal 16).",
+    )
     p_sumr.set_defaults(func=_cmd_summarize_research)
 
     # --- governance (Tier 2, Goal 10) --------------------------------------
@@ -1155,7 +1246,48 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("runs/attempts.jsonl"),
         help="Path to attempts.jsonl (default: runs/attempts.jsonl).",
     )
+    p_sum.add_argument(
+        "--store",
+        type=Path,
+        default=None,
+        help="Read attempts from a SQLite store instead of the JSONL path (Goal 16).",
+    )
     p_sum.set_defaults(func=_cmd_summarize_runs)
+
+    # --- durable storage (Goal 16) -----------------------------------------
+    p_smig = sub.add_parser(
+        "storage-migrate", help="Create/migrate the SQLite research store schema (Goal 16)."
+    )
+    p_smig.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH,
+                        help=f"SQLite store path (default: {DEFAULT_STORE_PATH}).")
+    p_smig.set_defaults(func=_cmd_storage_migrate)
+
+    p_simp = sub.add_parser(
+        "storage-import", help="Import existing JSONL archives into the SQLite store (Goal 16)."
+    )
+    p_simp.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH,
+                        help=f"SQLite store path (default: {DEFAULT_STORE_PATH}).")
+    p_simp.add_argument("--from-dir", type=Path, default=None,
+                        help="Directory of <stream>.jsonl files (default: canonical runs/* paths).")
+    p_simp.set_defaults(func=_cmd_storage_import)
+
+    p_sexp = sub.add_parser(
+        "storage-export", help="Export the SQLite store back to JSONL files (Goal 16)."
+    )
+    p_sexp.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH,
+                        help=f"SQLite store path (default: {DEFAULT_STORE_PATH}).")
+    p_sexp.add_argument("--to-dir", type=Path, default=Path("runs/export"),
+                        help="Output directory for <stream>.jsonl files (default: runs/export).")
+    p_sexp.set_defaults(func=_cmd_storage_export)
+
+    p_sver = sub.add_parser(
+        "storage-verify", help="Verify tamper-evident hash chains in the SQLite store (Goal 16)."
+    )
+    p_sver.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH,
+                        help=f"SQLite store path (default: {DEFAULT_STORE_PATH}).")
+    p_sver.add_argument("--stream", default=None,
+                        help="Verify only this stream (default: all hash-chained streams).")
+    p_sver.set_defaults(func=_cmd_storage_verify)
 
     p_meta = sub.add_parser(
         "propose-meta-change", help="Propose a bounded process change (Goal 05)."

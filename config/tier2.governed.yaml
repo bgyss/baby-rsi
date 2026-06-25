@@ -76,6 +76,16 @@ compute:
       memory_mb: 2048
       max_processes: 64
 
+# Durable research store (Goal 16). JSONL stays the default, transparent audit/export format;
+# `backend: sqlite` opts into a queryable SQLite store with schema migrations, idempotent
+# writes, and hash-chained tamper-evidence for governance/artifact records. Lowering back to
+# `jsonl` (or omitting this block) is config-only and always safe; the SQLite store is never a
+# hidden dependency for Tier 0 local tests. Changing audit retention or tamper-evidence policy
+# is human-gated.
+storage:
+  backend: jsonl                             # jsonl (default) | sqlite
+  path: runs/siro.db                         # SQLite database path when backend=sqlite
+
 evaluation:
   primary_metric: pytest_pass_rate
   require_reproducibility: true

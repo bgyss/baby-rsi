@@ -35,7 +35,7 @@ All design docs live under [`docs/`](docs/).
 | `docs/15_scale_cost_model.md` | Source-backed deployment cost model and scale bands. |
 | `docs/16_low_cost_validation_plan.md` | Cheap local-to-frontier validation ladder. |
 
-Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`15` are implemented. Goals `16`–`20` are post-Tier-2 refinement specs: durable storage (`16`), benchmark expansion (`17`), provider operations (`18`), governance identity (`19`), and the bounded operational pilot (`20`). Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
+Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`16` are implemented. Goals `17`–`20` are post-Tier-2 refinement specs: benchmark expansion (`17`), provider operations (`18`), governance identity (`19`), and the bounded operational pilot (`20`). Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
 
 ## Capability tiers
 
@@ -61,11 +61,11 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goals 01-15 are implemented; Goals 16-20 are specified, not yet implemented.
+Goals 01-16 are implemented; Goals 17-20 are specified, not yet implemented.
 The implemented set includes the Tier 2 governance, compute scale-up, model-training
 testbed work that landed in Goals 10–12, the docs consistency contract in Goal 13,
-the pricing audit/budget-calibration contract in Goal 14, and the hard
-resource-isolation backend in Goal 15.
+the pricing audit/budget-calibration contract in Goal 14, the hard
+resource-isolation backend in Goal 15, and the durable research store in Goal 16.
 Every implemented goal reuses the same lifecycle, gates, evaluator, and memory
 schema — only what fills the roles changes, by **config not code**, as the tier rises. Each
 entry below names its goal, the modules/artifacts it added or will add, and what it does.
@@ -155,7 +155,7 @@ entry below names its goal, the modules/artifacts it added or will add, and what
   implementation provider), recorded in a `ModelRegistry`. Disabled entirely at Tier ≤ 1.
   CLI: `train-model`, `deploy-model`.
 
-### Cross-tier hardening and production refinements (Goals 13–15)
+### Cross-tier hardening and production refinements (Goals 13–16)
 
 - **Goal 13 — Documentation consistency contract** (`docs/goal_prompts/goals.json`,
   `docs_check`, CLI): machine-readable goal manifest and docs consistency/privacy
@@ -173,12 +173,16 @@ entry below names its goal, the modules/artifacts it added or will add, and what
   `pids.max`, and peak accounting where available. A config `compute` backend policy can
   require a hard backend above a chosen tier (`hard_backend_above_tier`), with an explicit
   `allow_local_dev` override. CLI: `sandbox-backends`, `run-scaled --backend`.
+- **Goal 16 — Durable research store and query layer** (`storage`, `schemas`, CLI): a
+  storage interface over every append-only stream (attempts, research/training attempts,
+  model calls, memory, meta-changes, governance, artifacts, deployments). JSONL stays the
+  default transparent backend; an opt-in SQLite backend adds schema migrations, idempotency
+  keys (repeated writes dedupe), hash-chained tamper-evidence for governance/artifact
+  records, and byte-compatible JSONL export/import. `summarize-runs`/`summarize-research`
+  read through either backend. CLI: `storage-migrate`, `storage-import`, `storage-export`,
+  `storage-verify`.
 
-### Cross-tier hardening and production refinements (Goals 16–20) — specified, not yet implemented
-- **Goal 16 — Durable research store and query layer** (`archive`, `memory`, `storage`):
-  specifies a storage interface plus SQLite backend with migrations, idempotency,
-  stable lineage IDs, JSONL export compatibility, and optional tamper-evident governance
-  records.
+### Cross-tier hardening and production refinements (Goals 17–20) — specified, not yet implemented
 - **Goal 17 — Research benchmark suite expansion** (`tasks/research/`, `research`):
   specifies a larger fixed benchmark with at least 10 tasks per existing family, new
   families, adversarial/noisy tasks, and richer per-family/cost-per-promotion summaries.
@@ -220,6 +224,11 @@ uv run siro check-docs                                # README/manifest/goal pro
 mise run check-docs                                   # thin wrapper around the same docs contract
 uv run siro pricing-audit --config config/tier1.frontier.yaml --strict  # pricing freshness and budget audit (Goal 14)
 mise run pricing-audit                                # thin wrapper around the strict Tier 1 pricing audit
+uv run siro storage-migrate --store runs/siro.db      # create/upgrade the durable SQLite store (Goal 16)
+uv run siro storage-import --store runs/siro.db       # idempotently load JSONL archives into SQLite (Goal 16)
+uv run siro storage-export --store runs/siro.db --to-dir runs/export  # SQLite -> JSONL backup, reader-compatible (Goal 16)
+uv run siro storage-verify --store runs/siro.db       # verify governance/artifact hash chains (Goal 16)
+uv run siro summarize-runs --store runs/siro.db       # summaries read JSONL or SQLite (Goal 16)
 uv run pytest tests/test_cli.py::test_tier2_model_training_smoke_path_uses_separate_train_and_deploy_approvals  # cheap Tier 2 approval/deploy smoke
 ```
 

@@ -23,6 +23,7 @@ def test_core_modules_import():
         sandbox,
         scale,
         schemas,
+        storage,
         tools,
     )
     from siro.agents import build_agents  # noqa: F401

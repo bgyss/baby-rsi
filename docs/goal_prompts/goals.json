@@ -138,11 +138,11 @@
     {
       "number": 16,
       "title": "Durable research store and query layer",
-      "status": "specified",
+      "status": "implemented",
       "category": "Cross-tier hardening",
       "prompt_path": "docs/goal_prompts/goal_16_durable_research_store.md",
-      "artifacts": ["src/siro/archive.py", "src/siro/memory.py", "src/siro/storage.py"],
-      "summary": "Specifies a storage interface and SQLite backend with migrations, lineage IDs, and JSONL compatibility."
+      "artifacts": ["src/siro/storage.py", "src/siro/schemas.py", "src/siro/cli.py"],
+      "summary": "Adds a storage interface over every append-only stream with a SQLite backend (schema migrations, idempotency keys, hash-chained tamper-evidence, JSONL export/import) alongside the default JSONL backend, plus storage CLI verbs and store-backed summaries."
     },
     {
       "number": 17,
