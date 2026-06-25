@@ -11,14 +11,19 @@ import json
 import pytest
 
 from siro.budget import BudgetExceeded
+from siro.config import load_config
 from siro.governance import ApprovalLedger, GovernanceDenied, GovernanceGate
 from siro.research import ResearchArchive, load_research_task
 from siro.scale import (
+    BackendPolicy,
+    BackendPolicyError,
     CheckpointStore,
     ComputeAllocationError,
     ComputeAllocator,
     ComputeBudget,
     ScaledRunner,
+    backend_policy_from_config,
+    compute_tiers_from_config,
 )
 from siro.schemas import ApprovalScope, GovernedAction
 
@@ -203,3 +208,86 @@ def test_execution_plane_has_no_network_under_run_guarded(tmp_path):
     result = runner.run(task, "", compute_tier=0, experiment_id="net")
     # The candidate could not open a socket — network is blocked even at scale.
     assert result.metric.passed
+
+
+# --- Goal 15: backend policy + process-count ceiling ------------------------
+
+
+def test_backend_policy_and_tiers_parse_from_tier2_config():
+    config = load_config("config/tier2.governed.yaml")
+    policy = backend_policy_from_config(config)
+    assert policy.default_backend == "local"
+    assert policy.hard_backend_above_tier == 0
+    assert policy.allow_local_dev is False
+    assert policy.requires_hard(0) is False and policy.requires_hard(1) is True
+    tiers = compute_tiers_from_config(config)
+    assert tiers[0].max_processes == 16  # process-count ceiling carried through
+
+
+def test_default_tier_runs_on_portable_backend_even_when_hard_required(tmp_path):
+    # Tier 0 never requires a hard backend, so the portable default runs and records its identity.
+    task = load_research_task(TINY_MLP)
+    runner = ScaledRunner(
+        _gate(tmp_path),
+        policy=BackendPolicy(hard_backend_above_tier=0),
+        archive=ResearchArchive(tmp_path / "r.jsonl"),
+        checkpoints=CheckpointStore(tmp_path / "ckpt"),
+    )
+    result = runner.run(task, GOOD_CONFIG, compute_tier=0, experiment_id="mlp")
+    assert result.metric.passed
+    assert result.backend == "local"
+
+
+def test_higher_tier_refuses_portable_backend(tmp_path):
+    # The backend policy is checked before allocation: a tier needing hard isolation must not
+    # silently run on the portable developer monitor.
+    task = load_research_task(TINY_MLP)
+    runner = ScaledRunner(
+        _gate(tmp_path),
+        policy=BackendPolicy(hard_backend_above_tier=0, allow_local_dev=False),
+        archive=ResearchArchive(tmp_path / "r.jsonl"),
+        checkpoints=CheckpointStore(tmp_path / "ckpt"),
+    )
+    with pytest.raises(BackendPolicyError, match="hard"):
+        runner.run(task, GOOD_CONFIG, compute_tier=1, experiment_id="mlp")
+
+
+def test_local_dev_override_bypasses_backend_policy(tmp_path):
+    # With the local-dev override, the portable backend is allowed above the threshold, so the
+    # next gate (promotion-before-budget) is what stops an unearned tier — not the backend policy.
+    task = load_research_task(TINY_MLP)
+    runner = ScaledRunner(
+        _gate(tmp_path),
+        policy=BackendPolicy(hard_backend_above_tier=0, allow_local_dev=True),
+        archive=ResearchArchive(tmp_path / "r.jsonl"),
+        checkpoints=CheckpointStore(tmp_path / "ckpt"),
+    )
+    with pytest.raises(ComputeAllocationError):
+        runner.run(task, GOOD_CONFIG, compute_tier=1, experiment_id="mlp")
+
+
+FORKER_EVAL = (
+    "import os, time, json\n"
+    "for _ in range(8):\n"
+    "    if os.fork() == 0:\n"
+    "        time.sleep(2)\n"
+    "        os._exit(0)\n"
+    "time.sleep(2)\n"
+    "print(json.dumps({'primary': 1.0, 'passed': True}))\n"
+)
+
+
+@pytest.mark.skipif(not hasattr(__import__("os"), "fork"), reason="requires os.fork")
+def test_process_count_breach_halts_and_escalates(tmp_path):
+    task = _make_task(tmp_path, FORKER_EVAL)
+    runner = ScaledRunner(
+        _gate(tmp_path),
+        tiers={0: ComputeBudget(0, 10.0, 512, max_processes=3)},  # 3-process ceiling vs 8 forks
+        archive=ResearchArchive(tmp_path / "research.jsonl"),
+        checkpoints=CheckpointStore(tmp_path / "ckpt"),
+    )
+    with pytest.raises(BudgetExceeded) as exc:
+        runner.run(task, "", compute_tier=0, experiment_id="fork")
+    assert exc.value.kind == "process_count"
+    attempts = ResearchArchive(tmp_path / "research.jsonl").read_all()
+    assert attempts and "process_count" in attempts[-1].reason

@@ -35,7 +35,7 @@ All design docs live under [`docs/`](docs/).
 | `docs/15_scale_cost_model.md` | Source-backed deployment cost model and scale bands. |
 | `docs/16_low_cost_validation_plan.md` | Cheap local-to-frontier validation ladder. |
 
-Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`14` are implemented. Goals `15`–`20` are post-Tier-2 refinement specs: hard resource isolation (`15`), durable storage (`16`), benchmark expansion (`17`), provider operations (`18`), governance identity (`19`), and the bounded operational pilot (`20`). Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
+Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`15` are implemented. Goals `16`–`20` are post-Tier-2 refinement specs: durable storage (`16`), benchmark expansion (`17`), provider operations (`18`), governance identity (`19`), and the bounded operational pilot (`20`). Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
 
 ## Capability tiers
 
@@ -61,10 +61,11 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goals 01-14 are implemented; Goals 15-20 are specified, not yet implemented.
+Goals 01-15 are implemented; Goals 16-20 are specified, not yet implemented.
 The implemented set includes the Tier 2 governance, compute scale-up, model-training
-testbed work that landed in Goals 10–12, the docs consistency contract in Goal 13, and
-the pricing audit/budget-calibration contract in Goal 14.
+testbed work that landed in Goals 10–12, the docs consistency contract in Goal 13,
+the pricing audit/budget-calibration contract in Goal 14, and the hard
+resource-isolation backend in Goal 15.
 Every implemented goal reuses the same lifecycle, gates, evaluator, and memory
 schema — only what fills the roles changes, by **config not code**, as the tier rises. Each
 entry below names its goal, the modules/artifacts it added or will add, and what it does.
@@ -154,7 +155,7 @@ entry below names its goal, the modules/artifacts it added or will add, and what
   implementation provider), recorded in a `ModelRegistry`. Disabled entirely at Tier ≤ 1.
   CLI: `train-model`, `deploy-model`.
 
-### Cross-tier hardening and production refinements (Goals 13–14)
+### Cross-tier hardening and production refinements (Goals 13–15)
 
 - **Goal 13 — Documentation consistency contract** (`docs/goal_prompts/goals.json`,
   `docs_check`, CLI): machine-readable goal manifest and docs consistency/privacy
@@ -164,11 +165,16 @@ entry below names its goal, the modules/artifacts it added or will add, and what
   CLI): config-level model price overrides with reviewed dates and source notes, pricing
   metadata recorded in model-call ledgers, and `pricing-audit` reporting for configured
   providers, stale/missing prices, budget ceilings, and representative cycle costs.
+- **Goal 15 — Hard resource isolation backend** (`backends`, `sandbox.run_guarded`,
+  `scale`): a sandbox backend abstraction behind the guarded execution path. The portable
+  `local` backend (the developer fallback) now sums the whole process group's RSS and
+  process count, so a forked child cannot dodge the memory/process ceiling; the
+  `linux_guarded` backend lets the Linux cgroup v2 kernel enforce `memory.max` (OOM-kill),
+  `pids.max`, and peak accounting where available. A config `compute` backend policy can
+  require a hard backend above a chosen tier (`hard_backend_above_tier`), with an explicit
+  `allow_local_dev` override. CLI: `sandbox-backends`, `run-scaled --backend`.
 
-### Cross-tier hardening and production refinements (Goals 15–20) — specified, not yet implemented
-- **Goal 15 — Hard resource isolation backend** (`sandbox`, `scale`): specifies a
-  Linux/container hard-isolation backend with cgroup-backed memory/process limits,
-  process-tree accounting, no execution-plane network, and portable local fallback tests.
+### Cross-tier hardening and production refinements (Goals 16–20) — specified, not yet implemented
 - **Goal 16 — Durable research store and query layer** (`archive`, `memory`, `storage`):
   specifies a storage interface plus SQLite backend with migrations, idempotency,
   stable lineage IDs, JSONL export compatibility, and optional tamper-evident governance
@@ -206,6 +212,8 @@ uv run siro propose-meta-change runs/attempts.jsonl   # meta-research outer loop
 uv run siro request-approval budget_increase --target max_usd_per_run --payload '{"max_usd_per_run":20}'  # Tier 2 governance request (Goal 10)
 uv run siro approve <request_id> --by <human>         # human-only grant; list-approvals/deny/revoke too (Goal 10)
 uv run siro run-scaled --compute-tier 1               # eval under a governed compute budget (Goal 11)
+uv run siro sandbox-backends                          # list resource-isolation backends + availability (Goal 15)
+uv run siro run-scaled --compute-tier 1 --backend linux_guarded  # hard, OS-enforced isolation on a supported host (Goal 15)
 uv run siro train-model exp1                          # governed weight-update experiment (Goal 12)
 uv run siro deploy-model <artifact_id> implementation --implementation-provider anthropic --reviewer-provider openai  # gated deploy (Goal 12)
 uv run siro check-docs                                # README/manifest/goal prompt/privacy contract (Goal 13)

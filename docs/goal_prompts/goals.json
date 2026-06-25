@@ -129,11 +129,11 @@
     {
       "number": 15,
       "title": "Hard resource isolation backend",
-      "status": "specified",
+      "status": "implemented",
       "category": "Cross-tier hardening",
       "prompt_path": "docs/goal_prompts/goal_15_hard_resource_isolation.md",
-      "artifacts": ["src/siro/sandbox.py", "src/siro/scale.py"],
-      "summary": "Specifies a Linux/container hard-isolation backend with cgroup-backed resource limits and network denial."
+      "artifacts": ["src/siro/backends.py", "src/siro/sandbox.py", "src/siro/scale.py"],
+      "summary": "Adds a sandbox backend abstraction: a portable local monitor with process-tree accounting and a Linux cgroup v2 hard-isolation backend with kernel-enforced memory/process ceilings, plus a compute-tier backend policy."
     },
     {
       "number": 16,

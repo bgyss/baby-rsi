@@ -35,7 +35,16 @@ def test_subcommands_registered():
         "propose-meta-change",
         "check-docs",
         "pricing-audit",
+        "run-scaled",
+        "sandbox-backends",
     } <= set(choices)
+
+
+def test_sandbox_backends_lists_local_and_hard(capsys):
+    assert main(["sandbox-backends"]) == 0
+    out = capsys.readouterr().out
+    assert "local: available" in out
+    assert "linux_guarded" in out
 
 
 def test_summarize_runs_reads_archive(tmp_path, capsys):

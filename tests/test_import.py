@@ -12,6 +12,7 @@ def test_core_modules_import():
     # Importing the package surface must not require network or a model server.
     from siro import (  # noqa: F401
         archive,
+        backends,
         controller,
         evaluator,
         memory,
@@ -20,6 +21,7 @@ def test_core_modules_import():
         prompts,
         safety,
         sandbox,
+        scale,
         schemas,
         tools,
     )

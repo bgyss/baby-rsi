@@ -52,6 +52,30 @@ sandbox:
   network: disabled                          # execution plane is always offline, at every tier
   max_attempts_per_task: 20
 
+# Governed compute scale-up (Goal 11) + hard resource isolation (Goal 15). Each compute tier
+# is a hard wall-clock + memory + process-count ceiling; tier 0 is free, higher tiers are
+# governed (promotion-before-budget + a human approval). `backend` is the default isolation
+# backend and `hard_backend_above_tier` forces a hard, OS-enforced backend (`linux_guarded`)
+# above that tier — the portable `local` monitor is a developer fallback and only stands in
+# above the threshold when `allow_local_dev` is set. A candidate never selects the backend.
+compute:
+  backend: local                             # default isolation backend (local | linux_guarded)
+  hard_backend_above_tier: 0                  # tiers > 0 require hard, OS-enforced isolation
+  allow_local_dev: false                      # set true only for local development on a portable host
+  tiers:
+    0:
+      wall_clock_seconds: 15
+      memory_mb: 512
+      max_processes: 16
+    1:
+      wall_clock_seconds: 60
+      memory_mb: 1024
+      max_processes: 32
+    2:
+      wall_clock_seconds: 300
+      memory_mb: 2048
+      max_processes: 64
+
 evaluation:
   primary_metric: pytest_pass_rate
   require_reproducibility: true

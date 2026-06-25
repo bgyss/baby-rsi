@@ -8,7 +8,9 @@ cycle uses:
 - ``run-training``        — run the tiny-training improvement loop (Goal 06).
 - ``run-org``             — run one full frontier-org research cycle (Goal 08).
 - ``run-research``        — run the org on research-shaped task(s) (Goal 09).
-- ``run-scaled``          — run an eval under a governed compute budget (Goal 11).
+- ``run-scaled``          — run an eval under a governed compute budget (Goal 11);
+                            ``--backend`` selects the isolation backend (Goal 15).
+- ``sandbox-backends``    — list resource-isolation backends + availability (Goal 15).
 - ``train-model`` / ``deploy-model`` — governed weight-update experiments (Goal 12);
                             both human-gated, deploy needs cross-model review.
 - ``check-docs``          — verify README/goal manifest consistency and docs privacy
@@ -35,6 +37,7 @@ from pathlib import Path
 
 from . import __version__
 from .archive import JSONLArchive, ModelCallLedger
+from .backends import available_backends
 from .budget import BudgetExceeded, BudgetTracker
 from .config import DEFAULT_CONFIG_PATH, load_config
 from .controller import Controller, select_best
@@ -75,9 +78,11 @@ from .research import (
 )
 from .scale import (
     DEFAULT_CHECKPOINT_DIR,
+    BackendPolicyError,
     CheckpointStore,
     ComputeAllocationError,
     ScaledRunner,
+    backend_policy_from_config,
     compute_tiers_from_config,
 )
 from .schemas import (
@@ -512,17 +517,27 @@ def _cmd_run_scaled(args: argparse.Namespace) -> int:
     """
     config = load_config(args.config)
     gate = GovernanceGate.from_config(config)
+    policy = backend_policy_from_config(config)
     runner = ScaledRunner(
         gate,
         archive=ResearchArchive(args.archive),
         checkpoints=CheckpointStore(args.checkpoints),
         tiers=compute_tiers_from_config(config),
+        backend=args.backend,
+        policy=policy,
     )
     task = load_research_task(args.task_dir)
     candidate = args.candidate.read_text(encoding="utf-8") if args.candidate else task.surface_code
     experiment_id = args.experiment_id or task.task_id
+    backend_name = args.backend or policy.default_backend
+    hard_note = (
+        f"; hard backend required above tier {policy.hard_backend_above_tier}"
+        if policy.hard_backend_above_tier is not None
+        else ""
+    )
     print(f"config: tier {config.tier} ({args.config}); governance "
-          f"{'on' if gate.enabled else 'off (compute tier > 0 needs Tier 2)'}")
+          f"{'on' if gate.enabled else 'off (compute tier > 0 needs Tier 2)'}; "
+          f"backend={backend_name}{hard_note}")
     print(f"run-scaled: {task.task_id}  compute-tier={args.compute_tier}  experiment={experiment_id}")
     try:
         result = runner.run(
@@ -533,6 +548,11 @@ def _cmd_run_scaled(args: argparse.Namespace) -> int:
             actor=args.actor,
             rationale=args.rationale,
         )
+    except BackendPolicyError as exc:
+        print(f"BLOCKED — {exc}")
+        print("Use a hard-isolation backend (e.g. --backend linux_guarded on a supported host) "
+              "or set compute.allow_local_dev for local development only.")
+        return 2
     except ComputeAllocationError as exc:
         print(f"BLOCKED — {exc}")
         print("Pass the smaller compute tier first (promotion-before-budget), then retry.")
@@ -549,9 +569,24 @@ def _cmd_run_scaled(args: argparse.Namespace) -> int:
         return 2
 
     m = result.metric
-    print(f"  budget: wall_clock={result.budget.wall_clock_seconds:g}s memory={result.budget.memory_mb}MB")
+    procs = "" if result.budget.max_processes is None else f" procs={result.budget.max_processes}"
+    print(f"  budget: wall_clock={result.budget.wall_clock_seconds:g}s "
+          f"memory={result.budget.memory_mb}MB{procs}  backend={result.backend}")
     print(f"  metric: {m.primary_name}={m.primary:g} passed={m.passed} peak_mem={result.peak_memory_mb:.0f}MB")
     print(f"  {result.attempt.status.value} — archived to {args.archive}; checkpoint in {args.checkpoints}")
+    return 0
+
+
+def _cmd_sandbox_backends(args: argparse.Namespace) -> int:
+    """Report which execution-plane isolation backends are usable here (Goal 15).
+
+    ``local`` is the portable developer fallback (always available); ``linux_guarded`` is the
+    hard, OS-enforced cgroup backend used for trusted compute scale-up.
+    """
+    print("Sandbox resource-isolation backends:")
+    for name, (usable, reason) in available_backends().items():
+        mark = "available" if usable else "unavailable"
+        print(f"  {name}: {mark} — {reason}")
     return 0
 
 
@@ -1007,7 +1042,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_CHECKPOINT_DIR,
         help=f"Checkpoint directory (default: {DEFAULT_CHECKPOINT_DIR}).",
     )
+    p_scaled.add_argument(
+        "--backend",
+        default=None,
+        help="Isolation backend (local | linux_guarded; default: from config's compute block).",
+    )
     p_scaled.set_defaults(func=_cmd_run_scaled)
+
+    p_backends = sub.add_parser(
+        "sandbox-backends",
+        help="List execution-plane resource-isolation backends and availability (Goal 15).",
+    )
+    p_backends.set_defaults(func=_cmd_sandbox_backends)
 
     # --- governed model-training (Tier 2, Goal 12) -------------------------
     p_train_model = sub.add_parser(
