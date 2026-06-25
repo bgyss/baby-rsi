@@ -58,61 +58,70 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goals 01–09 are implemented: the `siro` package (`src/siro/`) with explicit Pydantic
-schemas, an append-only JSONL archive + audit ledger, plane-isolation safety
-primitives, the objective scoring function, and a CLI surface (Goal 01); the per-task
-code-improver loop — `controller` + isolated `sandbox` execution (Goal 02); durable
-research `memory` distilled into the proposer prompt (Goal 03); the promotion
-`gates` — code-integrity, safety, reproducibility, and hidden-test gates that bound
-what the loop may promote (Goal 04); the bounded meta-research outer loop — `meta`,
-which reflects on the archive, proposes a reversible process change (prompts/retrieval),
-A/B-tests it against the current process on a fixed benchmark, and recommends
-promote/reject, with a separate `runs/meta_changes.jsonl` archive, a generated rollback
-plan, and durable application held behind a human-approval flag (Goal 05); and the
-tiny-training autoresearch loop — `training` + the fixed `training_task` benchmark (a
-deterministic pure-Python MLP), which applies the same inner loop to *training*: a
-candidate proposes a bounded `TrainConfig` delta, the sandbox trains it under a fixed
-wall-clock budget, and the best reproducible *validation-loss* improvement is promoted,
-with config deltas logged to a separate `runs/training_attempts.jsonl` archive (Goal 06);
-and the provider abstraction — `providers/` (one `ModelClient` interface behind local
-llama.cpp/LlamaBarn, Claude, and GPT backends, with structured output, tool use, and
-per-call token/cost/latency accounting), `config` (tier and per-role provider binding
-loaded from `config/tierN.*.yaml`), and `budget` (per-run/per-day USD and per-call token
-ceilings that halt-and-escalate on breach) — so the same Goal 02 loop runs at Tier 0
-(local) or Tier 1 (frontier) by **config only**, with every model call logged to
-`runs/model_calls.jsonl` and no credential ever reaching the execution plane (Goal 07);
-and the full Tier 1 research organization — `orchestrator` + `agents/` + `tools`, which
-runs one human objective through the model-backed roles (Hypothesis → Literature → triage
-→ Implementation → code-integrity/safety gates → offline sandbox → objective evaluator +
-Evaluation narrative → cross-model Safety review → Interpretation → promotion gate → Memory
-Curator → agenda update). Each role is a provider-bindable agent with a role system prompt
-(`prompts/`), a typed input contract and Pydantic `output_schema` enforced via structured
-output, and a constrained **control-plane-only** toolset (`read_allowed_file`,
-`query_memory`, `list_references`, `propose_patch` — never shell or network). The same
-lifecycle, gates, evaluator, and memory schema are reused unchanged; only the agents behind
-the roles get more capable. The Safety reviewer binds to a *different* provider than the
-Implementation Agent (required and verified at Tier ≥ 1), and a disagreement between the
-safety reviewer and the objective promotion gate is surfaced as an **escalation**, not a
-tie-break. Every agent call is in the audit ledger and charged against the token/USD
-ceilings, candidate execution stays offline and sandboxed, meta-research stays proposal-only
-and human-gated, and dropping `tier: 1` → `tier: 0` returns the whole org to fully-local
-operation with no code change (Goal 08);
-and the research-shaped task suite + evaluation harness — `research` + `tasks/research/`,
-which gives the org *real work* beyond single-function repair: three task families
-(`algorithm/` scored by executed-line count vs. a hidden workload, `training/` a
-Karpathy-style tiny-MLP scored by held-out validation loss under a fixed wall-clock budget,
-and `policy/` a rule-based sentiment policy scored by aggregate pass rate over a held-out
-benchmark). Each task carries a `brief.md`, a `baseline/` edit surface, a controller-owned
-objective `eval.py` (the authority for promotion, returning a typed `MetricRecord`), and an
-optional `hidden/` held-out set. `Orchestrator.run_research_cycle` runs the **same** full
-lifecycle and gates on these tasks; promotion is decided by the objective evaluator (never
-model self-judgment) and requires a *reproducible* improvement over the baseline. No-leakage
-is **enforced, not assumed**: held-out data is handed to `eval.py` outside the candidate's
-working directory via `SIRO_HIDDEN_PATH`, so there is no relative file to open and reading
-the env var or an absolute path from candidate code trips the static safety gate. Attempts
-(successes and negative results) land in a separate `runs/research_attempts.jsonl`, and
-`summarize-research` reports, per family, pass rate, median cycles to success, safety-gate
-failures, token/USD spend, and strategy diversity (Goal 09).
+Goals 01–09 are implemented; Goals 10–12 are written specifications, not yet built. Every
+implemented goal reuses the same lifecycle, gates, evaluator, and memory schema — only what
+fills the roles changes, by **config not code**, as the tier rises. Each entry below names
+its goal, the modules/artifacts it added, and what it does.
+
+### Tier 0 — local bounded testbed (Goals 01–06)
+
+- **Goal 01 — Project scaffold** (`schemas`, `archive`, `safety`, `evaluator`, `cli`):
+  explicit Pydantic schemas, an append-only JSONL archive + audit ledger, plane-isolation
+  primitives, the objective scoring function, and the CLI surface.
+- **Goal 02 — Code-improver loop** (`controller`, `sandbox`): the per-task inner loop
+  (propose → sandbox → evaluate → archive → select) with isolated, offline candidate
+  execution.
+- **Goal 03 — Research memory** (`memory`): durable structured records — negatives
+  included — distilled into the proposer prompt.
+- **Goal 04 — Promotion gates** (`gates`): code-integrity, safety, reproducibility, and
+  hidden-test gates that bound what the loop may promote.
+- **Goal 05 — Meta-research loop** (`meta`): the bounded outer loop — reflect on the
+  archive, propose a reversible process change (prompts/retrieval), A/B-test it on a fixed
+  benchmark, recommend promote/reject; separate `runs/meta_changes.jsonl` archive, generated
+  rollback plan, durable application held behind a human-approval flag.
+- **Goal 06 — Tiny-training autoresearch** (`training`, `training_task`): the same inner
+  loop applied to *training* — a candidate proposes a bounded `TrainConfig`, the sandbox
+  trains a fixed pure-Python MLP under a fixed wall-clock budget, and the best reproducible
+  validation-loss improvement is promoted; deltas in `runs/training_attempts.jsonl`.
+
+### Tier 1 — frontier research organization (Goals 07–09)
+
+- **Goal 07 — Provider abstraction** (`providers/`, `config`, `budget`): one `ModelClient`
+  interface behind local llama.cpp/LlamaBarn, Claude, and GPT backends (structured output,
+  tool use, per-call token/cost/latency accounting); tier + per-role provider binding from
+  `config/tierN.*.yaml`; per-run/per-day USD and per-call token ceilings that halt-and-
+  escalate. The Goal 02 loop runs Tier 0 (local) or Tier 1 (frontier) by config only; every
+  call logged to `runs/model_calls.jsonl`, no credential in the execution plane.
+- **Goal 08 — Frontier research org** (`orchestrator`, `agents/`, `tools`): one human
+  objective routed through model-backed roles (Hypothesis → Literature → triage →
+  Implementation → gates → offline sandbox → objective evaluator + Evaluation narrative →
+  cross-model Safety review → Interpretation → promotion gate → Memory Curator → agenda).
+  Each role is a provider-bindable agent with a typed `output_schema` and a **control-plane-
+  only** toolset (`read_allowed_file`, `query_memory`, `list_references`, `propose_patch` —
+  never shell/network). Safety binds to a *different* provider than Implementation (required
+  at Tier ≥ 1); safety-vs-gate disagreement escalates rather than tie-breaks; `tier: 1 → 0`
+  returns to fully-local with no code change.
+- **Goal 09 — Research-shaped task suite** (`research`, `tasks/research/`): real work
+  beyond single-function repair — three families (`algorithm/` scored by executed-line
+  count, `training/` by held-out validation loss under a wall-clock budget, `policy/` by
+  aggregate pass rate over a held-out benchmark). Each task has a `brief.md`, a `baseline/`
+  edit surface, a controller-owned objective `eval.py` (returns a typed `MetricRecord`), and
+  an optional `hidden/` set. `Orchestrator.run_research_cycle` runs the same lifecycle/gates;
+  promotion is decided by the objective evaluator and requires a *reproducible* improvement.
+  No-leakage is **enforced, not assumed** (held-out data handed to `eval.py` via
+  `SIRO_HIDDEN_PATH`, outside the candidate cwd). Attempts in `runs/research_attempts.jsonl`;
+  `summarize-research` reports per-family pass rate, median cycles to success, safety-gate
+  failures, token/USD spend, and strategy diversity.
+
+### Tier 2 — governed scale-up (Goals 10–12) — specified, not yet implemented
+
+- **Goal 10 — Governance gate**: a default-deny human-approval workflow (`GovernanceGate`
+  + approval ledger) that makes the self-improvement bounds an enforced, auditable artifact.
+- **Goal 11 — Governed compute scale-up**: larger compute / longer experiments under
+  governance — compute budget tiers, checkpointing, plane isolation unchanged at scale.
+- **Goal 12 — Governed model-training**: weight-update experiments behind governance + a
+  stability precondition; trained weights are artifacts with lineage, never auto-deployed.
+
 The canonical interface is `uv run siro` (mise tasks are thin wrappers):
 
 ```zsh
