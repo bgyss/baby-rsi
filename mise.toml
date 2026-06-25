@@ -37,6 +37,10 @@ run = "uv run ruff format ."
 description = "Run a code-improver experiment, e.g. mise run run-task -- tasks/code_improver/task_001"
 run = "uv run siro run-task"
 
+[tasks.run-training]
+description = "Run a tiny-training experiment, e.g. mise run run-training -- tasks/training/task_001"
+run = "uv run siro run-training"
+
 [tasks.summarize]
 description = "Summarize archived attempts"
 run = "uv run siro summarize-runs runs/attempts.jsonl"

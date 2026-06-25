@@ -1,0 +1,10 @@
+{
+  "learning_rate": 0.02,
+  "lr_schedule": "constant",
+  "batch_size": 32,
+  "hidden_size": 8,
+  "momentum": 0.0,
+  "weight_decay": 0.0,
+  "epochs": 40,
+  "init_seed": 0
+}

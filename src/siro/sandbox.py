@@ -12,11 +12,13 @@ the tests, so it cannot weaken or delete them.
 
 from __future__ import annotations
 
+import json
 import re
+import shutil
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from xml.etree import ElementTree
@@ -71,6 +73,26 @@ class SandboxResult:
         meaningful runtime to compare, only a uniformly bad score.
         """
         return not self.timed_out and not self.error and (self.passed_tests + self.failed_tests) > 0
+
+
+@dataclass(frozen=True)
+class TrainingRun:
+    """Raw, objective output of one sandboxed *training* run (Goal 06).
+
+    The training analogue of :class:`SandboxResult`: scoring/promotion logic lives in
+    ``training``. ``metrics`` is the JSON the fixed training script printed (val_loss,
+    throughput, …); ``timed_out``/``error`` mark runs that produced no usable metric.
+    """
+
+    metrics: dict = field(default_factory=dict)
+    runtime_ms: float = 0.0
+    timed_out: bool = False
+    error: str = ""
+
+    @property
+    def ran(self) -> bool:
+        """True if the fixed training script produced a usable validation metric."""
+        return not self.timed_out and not self.error and "val_loss" in self.metrics
 
 
 def _truncate(text: str, limit: int) -> str:
@@ -208,4 +230,68 @@ class Sandbox:
             )
 
 
-__all__ = ["SandboxConfig", "SandboxResult", "Sandbox"]
+    def run_training(self, config: dict, budget_seconds: float, *, script_path=None) -> TrainingRun:  # noqa: ANN001
+        """Run the *fixed* training script under a candidate ``config`` in isolation.
+
+        Same execution-plane contract as :meth:`run`: a temp dir, a credential-scrubbed
+        env, the network-blocking ``sitecustomize``, and a hard subprocess timeout. The
+        candidate supplies only ``config`` (hyperparameters, written as data); the script
+        itself is controller-owned (``training_task.py``) and never candidate-editable.
+
+        The wall-clock budget is enforced twice: cooperatively (passed to the script as
+        ``_budget_seconds`` so it stops cleanly and reports a partial result) and hard (the
+        subprocess timeout = ``budget_seconds`` + grace kills a script that ignores it).
+        """
+        script = Path(script_path) if script_path is not None else Path(__file__).with_name("training_task.py")
+        env = self.child_env()
+        assert_execution_plane_isolated(env)
+        payload = dict(config)
+        payload["_budget_seconds"] = budget_seconds
+        # Hard ceiling: a few seconds past the cooperative budget, then the kernel timeout.
+        hard_timeout = budget_seconds + 5.0
+
+        with TemporaryDirectory(prefix="siro-train-") as tmp:
+            tmpdir = Path(tmp)
+            run_script = tmpdir / "training_task.py"
+            shutil.copyfile(script, run_script)
+            (tmpdir / "sitecustomize.py").write_text(_SITECUSTOMIZE, encoding="utf-8")
+            config_path = tmpdir / "config.json"
+            config_path.write_text(json.dumps(payload), encoding="utf-8")
+
+            env["PYTHONPATH"] = str(tmpdir)
+            cmd = [sys.executable, str(run_script), str(config_path)]
+            start = time.perf_counter()
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    cwd=tmpdir,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=hard_timeout,
+                )
+            except subprocess.TimeoutExpired:
+                runtime_ms = (time.perf_counter() - start) * 1000.0
+                return TrainingRun(
+                    runtime_ms=runtime_ms,
+                    timed_out=True,
+                    error=f"training exceeded hard timeout of {hard_timeout}s",
+                )
+            runtime_ms = (time.perf_counter() - start) * 1000.0
+
+            if proc.returncode != 0:
+                return TrainingRun(
+                    runtime_ms=runtime_ms,
+                    error=_truncate(proc.stderr or "training script failed", self.config.max_output_bytes),
+                )
+            line = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else ""
+            try:
+                metrics = json.loads(line)
+            except (json.JSONDecodeError, IndexError):
+                return TrainingRun(runtime_ms=runtime_ms, error="training produced no parseable metrics")
+            if "error" in metrics:
+                return TrainingRun(runtime_ms=runtime_ms, metrics=metrics, error=str(metrics["error"]))
+            return TrainingRun(metrics=metrics, runtime_ms=runtime_ms)
+
+
+__all__ = ["SandboxConfig", "SandboxResult", "TrainingRun", "Sandbox"]

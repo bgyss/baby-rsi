@@ -62,6 +62,7 @@ mise run test                              # uv run pytest (Gate: must pass befo
 uv run pytest tests/test_sandbox.py::name  # single test
 uv run siro --help                         # CLI entrypoint
 mise run run-task -- tasks/code_improver/task_001
+mise run run-training -- tasks/training/task_001
 mise run summarize                         # uv run siro summarize-runs runs/attempts.jsonl
 uv run siro propose-meta-change runs/attempts.jsonl
 ```
@@ -70,7 +71,7 @@ mise tasks (`mise tasks` to list) are thin wrappers; `uv run siro ...` is the ca
 
 ## Target package layout (`src/siro/`)
 
-The components form the experiment loop as separate modules: `controller.py` (loop, candidate selection), `orchestrator.py` (multi-agent routing, budget + tier policy), `model_client.py` + `providers/` (provider abstraction: `local.py`/`anthropic.py`/`openai.py`), `agents/` + `tools.py` (role wiring; control-plane-only tools), `sandbox.py` (execution plane: isolated, no network), `evaluator.py` (objective scoring), `archive.py` (JSONL), `memory.py`, `gates.py` (promotion gates: code-integrity, safety, reproducibility, hidden-tests — Goal 04), `meta.py` (the bounded meta-research outer loop — Goal 05), `safety.py` (plane-isolation primitives), `budget.py` (compute + token/USD ceilings), `schemas.py` (Pydantic), `prompts.py`. Role prompts in `prompts/`, fixtures in `tasks/`, outputs in `runs/` (incl. `model_calls.jsonl` audit ledger and `meta_changes.jsonl` meta-change archive). As-built note: the promotion gates landed in their own `gates.py` (not folded into `safety.py` as the design docs sketch), and `meta.py` holds the outer loop.
+The components form the experiment loop as separate modules: `controller.py` (loop, candidate selection), `orchestrator.py` (multi-agent routing, budget + tier policy), `model_client.py` + `providers/` (provider abstraction: `local.py`/`anthropic.py`/`openai.py`), `agents/` + `tools.py` (role wiring; control-plane-only tools), `sandbox.py` (execution plane: isolated, no network), `evaluator.py` (objective scoring), `archive.py` (JSONL), `memory.py`, `gates.py` (promotion gates: code-integrity, safety, reproducibility, hidden-tests — Goal 04), `meta.py` (the bounded meta-research outer loop — Goal 05), `training.py` + `training_task.py` (the tiny-training inner loop and its fixed pure-Python benchmark — Goal 06), `safety.py` (plane-isolation primitives), `budget.py` (compute + token/USD ceilings), `schemas.py` (Pydantic), `prompts.py`. Role prompts in `prompts/`, fixtures in `tasks/` (`tasks/code_improver/` for code, `tasks/training/` for training), outputs in `runs/` (incl. `model_calls.jsonl` audit ledger, `meta_changes.jsonl` meta-change archive, and `training_attempts.jsonl` training-attempt archive). As-built note: the promotion gates landed in their own `gates.py` (not folded into `safety.py` as the design docs sketch), `meta.py` holds the outer loop, and the training loop runs the *fixed* `training_task.py` in the sandbox under a candidate-supplied `TrainConfig` (the training analogue of fixed tests + candidate code).
 
 ## The core loop
 

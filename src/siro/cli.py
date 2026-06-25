@@ -5,6 +5,7 @@ tasks are thin wrappers. Goal 01 ships the command *surface* the self-improvemen
 cycle uses:
 
 - ``run-task``            — run the per-task improvement loop (Goal 02).
+- ``run-training``        — run the tiny-training improvement loop (Goal 06).
 - ``summarize-runs``      — reflect on the archive (real: counts + pass rate + best).
 - ``propose-meta-change`` — propose a process change (Goal 05).
 
@@ -24,6 +25,12 @@ from .memory import ResearchMemory, failure_signature
 from .meta import MetaChangeStore, MetaResearcher
 from .model_client import LocalOpenAIClient
 from .schemas import MetaChangeRecord, MetaRecommendation
+from .training import (
+    DEFAULT_BUDGET_SECONDS,
+    DEFAULT_TRAINING_ATTEMPTS_PATH,
+    TrainingArchive,
+    TrainingController,
+)
 
 
 def _cmd_run_task(args: argparse.Namespace) -> int:
@@ -48,6 +55,34 @@ def _cmd_run_task(args: argparse.Namespace) -> int:
     if best is not None:
         print(f"Best: {best.candidate.candidate_id} score={best.evaluation.score:.1f}")
         print(f"Archived {len(result.attempts)} attempt(s) to {args.archive}")
+    return 0
+
+
+def _cmd_run_training(args: argparse.Namespace) -> int:
+    model = LocalOpenAIClient()
+    controller = TrainingController(
+        archive=TrainingArchive(args.archive),
+        ledger=ModelCallLedger(args.model_calls),
+        budget_seconds=args.budget,
+    )
+    result = controller.run_training(args.task_dir, model=model, generations=args.generations)
+
+    print(
+        f"run-training: {args.task_dir}  "
+        f"({args.generations} generation(s), {args.budget:g}s budget each)"
+    )
+    for attempt in result.attempts:
+        r = attempt.result
+        val = f"{r.val_loss:.6f}" if r and r.reproducible else "   n/a  "
+        thr = f"{r.throughput:>8.0f}" if r and r.reproducible else "     n/a"
+        print(
+            f"  {attempt.attempt_id:>12}  val_loss={val}  "
+            f"thr={thr}/s  {attempt.status.value:<8} {attempt.reason}"
+        )
+    best = result.best
+    if best is not None and best.result is not None:
+        print(f"Best: {best.attempt_id} val_loss={best.result.val_loss:.6f}")
+        print(f"Archived {len(result.attempts)} training attempt(s) to {args.archive}")
     return 0
 
 
@@ -187,6 +222,39 @@ def build_parser() -> argparse.ArgumentParser:
         help="Research-memory path (default: runs/memory.jsonl).",
     )
     p_run.set_defaults(func=_cmd_run_task)
+
+    p_train = sub.add_parser(
+        "run-training", help="Run the tiny-training improvement loop (Goal 06)."
+    )
+    p_train.add_argument(
+        "task_dir",
+        type=Path,
+        nargs="?",
+        default=Path("tasks/training/task_001"),
+        help="Path to a training task directory (default: tasks/training/task_001).",
+    )
+    p_train.add_argument(
+        "-n", "--generations", type=int, default=5, help="Number of generations (default: 5)."
+    )
+    p_train.add_argument(
+        "--budget",
+        type=float,
+        default=DEFAULT_BUDGET_SECONDS,
+        help=f"Fixed wall-clock budget per candidate, seconds (default: {DEFAULT_BUDGET_SECONDS:g}).",
+    )
+    p_train.add_argument(
+        "--archive",
+        type=Path,
+        default=DEFAULT_TRAINING_ATTEMPTS_PATH,
+        help="Training-attempts archive path (default: runs/training_attempts.jsonl).",
+    )
+    p_train.add_argument(
+        "--model-calls",
+        type=Path,
+        default=Path("runs/model_calls.jsonl"),
+        help="Model-call audit ledger path (default: runs/model_calls.jsonl).",
+    )
+    p_train.set_defaults(func=_cmd_run_training)
 
     p_sum = sub.add_parser("summarize-runs", help="Summarize an attempts archive.")
     p_sum.add_argument(

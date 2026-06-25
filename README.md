@@ -58,24 +58,30 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goals 01–05 are implemented: the `siro` package (`src/siro/`) with explicit Pydantic
+Goals 01–06 are implemented: the `siro` package (`src/siro/`) with explicit Pydantic
 schemas, an append-only JSONL archive + audit ledger, plane-isolation safety
 primitives, the objective scoring function, and a CLI surface (Goal 01); the per-task
 code-improver loop — `controller` + isolated `sandbox` execution (Goal 02); durable
 research `memory` distilled into the proposer prompt (Goal 03); the promotion
 `gates` — code-integrity, safety, reproducibility, and hidden-test gates that bound
-what the loop may promote (Goal 04); and the bounded meta-research outer loop — `meta`,
+what the loop may promote (Goal 04); the bounded meta-research outer loop — `meta`,
 which reflects on the archive, proposes a reversible process change (prompts/retrieval),
 A/B-tests it against the current process on a fixed benchmark, and recommends
 promote/reject, with a separate `runs/meta_changes.jsonl` archive, a generated rollback
-plan, and durable application held behind a human-approval flag (Goal 05). The
-candidate-generation model layer (the provider abstraction) is generalized in Goal 07.
+plan, and durable application held behind a human-approval flag (Goal 05); and the
+tiny-training autoresearch loop — `training` + the fixed `training_task` benchmark (a
+deterministic pure-Python MLP), which applies the same inner loop to *training*: a
+candidate proposes a bounded `TrainConfig` delta, the sandbox trains it under a fixed
+wall-clock budget, and the best reproducible *validation-loss* improvement is promoted,
+with config deltas logged to a separate `runs/training_attempts.jsonl` archive (Goal 06).
+The candidate-generation model layer (the provider abstraction) is generalized in Goal 07.
 The canonical interface is `uv run siro` (mise tasks are thin wrappers):
 
 ```zsh
 uv run siro --help
 uv run siro summarize-runs runs/attempts.jsonl        # reflect on the archive
-uv run siro run-task tasks/code_improver/task_001     # per-task inner loop (Goal 02)
+uv run siro run-task tasks/code_improver/task_001     # per-task code inner loop (Goal 02)
+uv run siro run-training tasks/training/task_001      # per-task training inner loop (Goal 06)
 uv run siro propose-meta-change runs/attempts.jsonl   # meta-research outer loop (Goal 05)
 ```
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -264,6 +265,79 @@ class MetaChangeRecord(BaseModel):
     created_at: datetime = Field(default_factory=_utcnow)
 
 
+class TrainConfig(BaseModel):
+    """The bounded edit surface of a *training* candidate (Goal 06).
+
+    Like :class:`ProcessConfig` for the meta-loop, this schema *is* the bound: it lists
+    exactly the hyperparameters a candidate may tune, and nothing else. The Goal 06
+    forbidden changes — validation data, the metric definition, disabling evaluation,
+    expanding the runtime budget, downloading datasets, installing packages — are simply
+    **unrepresentable** here, so a training candidate is structurally incapable of making
+    them. The fixed data/metric/budget live in ``training_task`` and the controller, not
+    in this config.
+
+    Range bounds are enforced separately by :func:`siro.training.config_bounds` (the
+    training analogue of the safety gate); this schema fixes only the *shape*.
+    """
+
+    learning_rate: float = 0.02
+    lr_schedule: Literal["constant", "step", "cosine"] = "constant"
+    batch_size: int = 32
+    hidden_size: int = 8
+    momentum: float = 0.0
+    weight_decay: float = 0.0
+    epochs: int = 40
+    init_seed: int = 0
+
+
+#: A large *finite* sentinel for "worse than any real validation loss". JSON has no
+#: ``inf``, so failed/unevaluated runs use this so they still round-trip and can never be
+#: selected as best.
+WORST_VAL_LOSS = 1e30
+
+
+class TrainResult(BaseModel):
+    """Objective outcome of one training run on the fixed benchmark (Goal 06).
+
+    ``val_loss`` (mean validation cross-entropy, lower is better) is the primary metric;
+    ``throughput`` is the secondary metric. ``reproducible`` mirrors the code loop: a run
+    that timed out or errored is not a reproducible signal of quality and can never be
+    promoted. Failed/unevaluated runs default the losses to :data:`WORST_VAL_LOSS`.
+    """
+
+    val_loss: float = WORST_VAL_LOSS
+    train_loss: float = WORST_VAL_LOSS
+    throughput: float = 0.0
+    steps: int = 0
+    epochs_completed: int = 0
+    wall_clock_ms: float = 0.0
+    budget_hit: bool = False
+    timed_out: bool = False
+    reproducible: bool = False
+    error: str = ""
+
+
+class TrainingAttempt(BaseModel):
+    """One archived training attempt — the unit the training inner loop selects over.
+
+    Mirrors :class:`Attempt` but carries a :class:`TrainConfig` (a config delta, logged
+    as auditable data) and a :class:`TrainResult` instead of code + test scoring. Stored
+    in its own archive (``runs/training_attempts.jsonl``), kept apart from code attempts.
+    Negative results — out-of-bounds configs, timeouts, regressions — are recorded with
+    their ``status`` and ``reason``, never discarded.
+    """
+
+    attempt_id: str
+    task_id: str
+    config: TrainConfig
+    parent_id: str | None = None
+    result: TrainResult | None = None
+    status: AttemptStatus = AttemptStatus.REJECTED
+    reason: str = ""
+    gates: GateReport | None = None
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
 class ModelCall(BaseModel):
     """Audit-ledger row appended to ``runs/model_calls.jsonl`` for every model call.
 
@@ -292,6 +366,10 @@ __all__ = [
     "EvaluationResult",
     "Attempt",
     "MemoryEntry",
+    "WORST_VAL_LOSS",
+    "TrainConfig",
+    "TrainResult",
+    "TrainingAttempt",
     "ModelCall",
     "ProcessConfig",
     "MetaChangeKind",
