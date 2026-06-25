@@ -122,6 +122,60 @@ budget:
 governance:
   enabled: true
   approvals_path: runs/approvals.jsonl
+  operators:
+    - operator_id: alice
+      display_name: Alice Reviewer
+      role: approver
+      auth_method: local-dev
+      auth_metadata:
+        proof: hmac-sha256
+      status: active
+    - operator_id: bob
+      display_name: Bob Reviewer
+      role: approver
+      auth_method: local-dev
+      auth_metadata:
+        proof: hmac-sha256
+      status: active
+    - operator_id: casey
+      display_name: Casey Requester
+      role: requester
+      auth_method: local-dev
+      status: active
+  policies:
+    - policy_id: budget-increase
+      action: budget_increase
+      risk: medium
+      required_reviewers: 1
+      required_role: approver
+      separation_of_duties: true
+      max_scope: once
+      max_expiry_seconds: 86400
+      require_signature: true
+      required_rationale_fields: ["rationale"]
+      required_evidence: ["safety"]
+    - policy_id: high-risk-two-person
+      action: high_risk_action
+      risk: high
+      required_reviewers: 2
+      required_role: approver
+      separation_of_duties: true
+      max_scope: once
+      max_expiry_seconds: 86400
+      require_signature: true
+      required_rationale_fields: ["rationale"]
+      required_evidence: ["safety", "rollback"]
+    - policy_id: model-deploy-two-person
+      action: model_deploy
+      risk: high
+      required_reviewers: 2
+      required_role: approver
+      separation_of_duties: true
+      max_scope: once
+      max_expiry_seconds: 86400
+      require_signature: true
+      required_rationale_fields: ["rationale"]
+      required_evidence: ["safety", "rollback"]
 
 safety:
   allow_network: true                        # control-plane egress (allowlisted only)

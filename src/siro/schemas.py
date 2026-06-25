@@ -473,25 +473,78 @@ class GovernedAction(str, Enum):
     :class:`ApprovalDecision` is on record, bound to the exact proposed change.
     """
 
-    BUDGET_INCREASE = "budget_increase"            # expand compute / token / USD budgets
-    TIER_CHANGE = "tier_change"                     # change deployment tier
+    BUDGET_INCREASE = "budget_increase"  # expand compute / token / USD budgets
+    TIER_CHANGE = "tier_change"  # change deployment tier
     EGRESS_ALLOWLIST_CHANGE = "egress_allowlist_change"
     EVALUATOR_OR_TEST_CHANGE = "evaluator_or_test_change"
     SAFETY_GATE_CHANGE = "safety_gate_change"
     LOGGING_OR_AUDIT_CHANGE = "logging_or_audit_change"
-    PERMISSION_EXPANSION = "permission_expansion"   # widen tool permissions / edit surface
+    PERMISSION_EXPANSION = "permission_expansion"  # widen tool permissions / edit surface
     EXECUTION_PLANE_NETWORK = "execution_plane_network"
     AUTONOMOUS_INSTALL = "autonomous_install"
-    MODEL_TRAIN = "model_train"                     # run a weight-update experiment (Goal 12)
-    MODEL_DEPLOY = "model_deploy"                   # bind a trained model to an agent role (Goal 12)
-    HIGH_RISK_ACTION = "high_risk_action"           # any other irreversible / high-budget action
+    MODEL_TRAIN = "model_train"  # run a weight-update experiment (Goal 12)
+    MODEL_DEPLOY = "model_deploy"  # bind a trained model to an agent role (Goal 12)
+    HIGH_RISK_ACTION = "high_risk_action"  # any other irreversible / high-budget action
 
 
 class ApprovalScope(str, Enum):
     """How long a granted approval authorizes its action."""
 
-    ONCE = "once"          # single-use: consumed the first time the action is authorized
+    ONCE = "once"  # single-use: consumed the first time the action is authorized
     STANDING = "standing"  # reusable for the identical change until it expires or is revoked
+
+
+class OperatorRole(str, Enum):
+    """Human governance roles (Goal 19).
+
+    Agents may request governed actions, but only active human operators with an approving
+    role can grant, deny, revoke, or manage operator records.
+    """
+
+    REQUESTER = "requester"
+    REVIEWER = "reviewer"
+    APPROVER = "approver"
+    ADMIN = "admin"
+
+
+class OperatorStatus(str, Enum):
+    """Whether an operator identity is usable for new governance records."""
+
+    ACTIVE = "active"
+    REVOKED = "revoked"
+
+
+class OperatorIdentity(BaseModel):
+    """Typed local operator identity for Tier 2 governance (Goal 19)."""
+
+    operator_id: str
+    display_name: str
+    role: OperatorRole
+    auth_method: str = "local"
+    auth_metadata: dict[str, str] = Field(default_factory=dict)
+    status: OperatorStatus = OperatorStatus.ACTIVE
+    created_at: datetime = Field(default_factory=_utcnow)
+    revoked_at: datetime | None = None
+
+    @property
+    def active(self) -> bool:
+        return self.status is OperatorStatus.ACTIVE and self.revoked_at is None
+
+
+class GovernancePolicy(BaseModel):
+    """Policy template for one governed action (Goal 19)."""
+
+    policy_id: str
+    action: GovernedAction
+    risk: str = "medium"
+    required_reviewers: int = 1
+    required_role: OperatorRole = OperatorRole.APPROVER
+    separation_of_duties: bool = True
+    max_scope: ApprovalScope = ApprovalScope.ONCE
+    max_expiry_seconds: int | None = None
+    require_signature: bool = True
+    required_rationale_fields: list[str] = Field(default_factory=list)
+    required_evidence: list[str] = Field(default_factory=list)
 
 
 class ApprovalRequest(BaseModel):
@@ -509,8 +562,12 @@ class ApprovalRequest(BaseModel):
     action: GovernedAction
     target: str = ""
     content_hash: str = ""
-    actor: str = ""           # who/what raised it (an agent or the controller) — never approves
+    actor: str = ""  # who/what raised it (an agent or the controller) — never approves
     rationale: str = ""
+    payload: dict = Field(default_factory=dict)
+    risk: str = "medium"
+    evidence: list[str] = Field(default_factory=list)
+    rollback_plan: str = ""
     scope: ApprovalScope = ApprovalScope.ONCE
     created_at: datetime = Field(default_factory=_utcnow)
     expires_at: datetime | None = None
@@ -530,7 +587,13 @@ class ApprovalDecision(BaseModel):
     content_hash: str
     action: GovernedAction
     granted: bool
-    approver: str           # human id — required; agents can never populate this
+    approver: str  # human id — required; agents can never populate this
+    operator_id: str = ""  # typed Goal 19 identity; empty means legacy Goal 10 decision
+    signature: str = ""
+    signature_payload_hash: str = ""
+    signature_verified: bool = False
+    legacy_approver: bool = False
+    policy_id: str = ""
     scope: ApprovalScope = ApprovalScope.ONCE
     reason: str = ""
     created_at: datetime = Field(default_factory=_utcnow)
@@ -559,6 +622,10 @@ __all__ = [
     "GateReport",
     "GovernedAction",
     "ApprovalScope",
+    "OperatorRole",
+    "OperatorStatus",
+    "OperatorIdentity",
+    "GovernancePolicy",
     "ApprovalRequest",
     "ApprovalDecision",
     "ApprovalRevocation",

@@ -35,7 +35,7 @@ All design docs live under [`docs/`](docs/).
 | `docs/15_scale_cost_model.md` | Source-backed deployment cost model and scale bands. |
 | `docs/16_low_cost_validation_plan.md` | Cheap local-to-frontier validation ladder. |
 
-Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`18` are implemented. Goals `19`–`20` are post-Tier-2 refinement specs: governance identity (`19`) and the bounded operational pilot (`20`). Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
+Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`19` are implemented. Goal `20` is the remaining post-Tier-2 refinement spec for the bounded operational pilot. Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
 
 ## Capability tiers
 
@@ -61,13 +61,13 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goals 01-18 are implemented; Goals 19-20 are specified, not yet implemented.
+Goals 01-19 are implemented; Goals 20 are specified, not yet implemented.
 The implemented set includes the Tier 2 governance, compute scale-up, model-training
 testbed work that landed in Goals 10–12, the docs consistency contract in Goal 13,
 the pricing audit/budget-calibration contract in Goal 14, the hard
 resource-isolation backend in Goal 15, the durable research store in Goal 16, and the
 expanded research benchmark suite in Goal 17, and provider operations/observability in
-Goal 18.
+Goal 18, and governance identity/policy hardening in Goal 19.
 Every implemented goal reuses the same lifecycle, gates, evaluator, and memory
 schema — only what fills the roles changes, by **config not code**, as the tier rises. Each
 entry below names its goal, the modules/artifacts it added or will add, and what it does.
@@ -157,7 +157,7 @@ entry below names its goal, the modules/artifacts it added or will add, and what
   implementation provider), recorded in a `ModelRegistry`. Disabled entirely at Tier ≤ 1.
   CLI: `train-model`, `deploy-model`.
 
-### Cross-tier hardening and production refinements (Goals 13–18)
+### Cross-tier hardening and production refinements (Goals 13–19)
 
 - **Goal 13 — Documentation consistency contract** (`docs/goal_prompts/goals.json`,
   `docs_check`, CLI): machine-readable goal manifest and docs consistency/privacy
@@ -194,12 +194,16 @@ entry below names its goal, the modules/artifacts it added or will add, and what
   budget failures, provider request metadata on ledger rows, per-provider ops config, failed
   call records in the single-agent loop, and `provider-report` for spend, latency, retry,
   error, family-spend, and cost-per-promotion summaries.
+- **Goal 19 — Governance identity and policy hardening** (`governance`, `schemas`, CLI,
+  `config/tier2.governed.yaml`): typed operator identities, local signing proofs over
+  canonical approval payloads, per-action policy templates, two-person approval where
+  required, governance packet export, and identity/policy ledger verification. Existing
+  Goal 10 ledgers remain readable as legacy records; new hardened approvals validate active
+  operators, roles, signatures, requester/approver separation, expiry, and exact content
+  hashes. Human-only CLI verbs manage operators and approvals; the agent tool surface still
+  has no approval, signing, operator-management, or policy-mutation tool.
 
-### Cross-tier hardening and production refinements (Goals 19–20) — specified, not yet implemented
-- **Goal 19 — Governance identity and policy hardening** (`governance`, storage, CLI):
-  specifies typed operator identities, signed approvals, policy templates, two-person
-  approval where required, governance packet export, and ledger verification while keeping
-  agents unable to approve.
+### Cross-tier hardening and production refinements (Goal 20) — specified, not yet implemented
 - **Goal 20 — Bounded operational pilot and cost-per-promotion report** (`runs/pilots/`,
   reports): specifies a fixed, budget-capped Tier 0 vs cheap-frontier vs strong-frontier
   pilot that reports cost, promotion quality, safety escalations, and a continue/revise/stop
@@ -221,6 +225,10 @@ uv run siro summarize-research                        # per-family suite summary
 uv run siro propose-meta-change runs/attempts.jsonl   # meta-research outer loop (Goal 05)
 uv run siro request-approval budget_increase --target max_usd_per_run --payload '{"max_usd_per_run":20}'  # Tier 2 governance request (Goal 10)
 uv run siro approve <request_id> --by <human>         # human-only grant; list-approvals/deny/revoke too (Goal 10)
+uv run siro create-operator alice --display-name "Alice Reviewer" --role approver  # local operator registry (Goal 19)
+uv run siro approve <request_id> --by alice --signing-key "$LOCAL_DEV_SIGNING_KEY" --config config/tier2.governed.yaml  # identity-validated signed proof (Goal 19)
+uv run siro verify-governance --config config/tier2.governed.yaml  # verify approval identities, hashes, and signatures (Goal 19)
+uv run siro export-governance-packet <request_id> --config config/tier2.governed.yaml  # request/payload/evidence/history packet (Goal 19)
 uv run siro run-scaled --compute-tier 1               # eval under a governed compute budget (Goal 11)
 uv run siro sandbox-backends                          # list resource-isolation backends + availability (Goal 15)
 uv run siro run-scaled --compute-tier 1 --backend linux_guarded  # hard, OS-enforced isolation on a supported host (Goal 15)

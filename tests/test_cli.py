@@ -156,9 +156,7 @@ def test_propose_meta_change_records_proposal(tmp_path, capsys):
     assert store_path.exists()
 
 
-def test_tier2_model_training_smoke_path_uses_separate_train_and_deploy_approvals(
-    tmp_path, capsys
-):
+def test_tier2_model_training_smoke_path_uses_separate_train_and_deploy_approvals(tmp_path, capsys):
     """Cheap end-to-end Tier 2 smoke through the public CLI entrypoints."""
 
     approvals = tmp_path / "approvals.jsonl"
@@ -181,87 +179,228 @@ governance:
         "train_config": {"learning_rate": 0.1, "epochs": 300},
         "compute_tier": 0,
     }
-    assert main([
-        "request-approval",
-        "model_train",
-        "--target",
-        f"train:{experiment_id}",
-        "--payload",
-        json.dumps(train_payload),
-        "--ledger",
-        str(approvals),
-    ]) == 0
+    assert (
+        main(
+            [
+                "request-approval",
+                "model_train",
+                "--target",
+                f"train:{experiment_id}",
+                "--payload",
+                json.dumps(train_payload),
+                "--ledger",
+                str(approvals),
+            ]
+        )
+        == 0
+    )
     train_request = re.search(r"request ([0-9a-f]{12})", capsys.readouterr().out).group(1)
 
     assert main(["approve", train_request, "--by", "alice", "--ledger", str(approvals)]) == 0
     capsys.readouterr()
 
-    assert main([
-        "train-model",
-        experiment_id,
-        "--config",
-        str(config),
-        "--archive",
-        str(archive),
-        "--store",
-        str(store),
-    ]) == 0
+    assert (
+        main(
+            [
+                "train-model",
+                experiment_id,
+                "--config",
+                str(config),
+                "--archive",
+                str(archive),
+                "--store",
+                str(store),
+            ]
+        )
+        == 0
+    )
     train_out = capsys.readouterr().out
     artifact_id = re.search(r"trained artifact ([0-9a-f]{12})", train_out).group(1)
     assert "NOT deployed" in train_out
     assert ModelRegistry(registry_path).is_deployed(artifact_id, "implementation") is False
 
-    assert main([
-        "deploy-model",
-        artifact_id,
-        "implementation",
-        "--implementation-provider",
-        "anthropic",
-        "--reviewer-provider",
-        "openai",
-        "--config",
-        str(config),
-        "--store",
-        str(store),
-        "--registry",
-        str(registry_path),
-    ]) == 2
+    assert (
+        main(
+            [
+                "deploy-model",
+                artifact_id,
+                "implementation",
+                "--implementation-provider",
+                "anthropic",
+                "--reviewer-provider",
+                "openai",
+                "--config",
+                str(config),
+                "--store",
+                str(store),
+                "--registry",
+                str(registry_path),
+            ]
+        )
+        == 2
+    )
     deploy_denied = capsys.readouterr().out
     assert "needs human approval" in deploy_denied
     assert ModelRegistry(registry_path).is_deployed(artifact_id, "implementation") is False
 
     deploy_payload = {"artifact_id": artifact_id, "role": "implementation"}
-    assert main([
-        "request-approval",
-        "model_deploy",
-        "--target",
-        "deploy:implementation",
-        "--payload",
-        json.dumps(deploy_payload),
-        "--ledger",
-        str(approvals),
-    ]) == 0
+    assert (
+        main(
+            [
+                "request-approval",
+                "model_deploy",
+                "--target",
+                "deploy:implementation",
+                "--payload",
+                json.dumps(deploy_payload),
+                "--ledger",
+                str(approvals),
+            ]
+        )
+        == 0
+    )
     deploy_request = re.search(r"request ([0-9a-f]{12})", capsys.readouterr().out).group(1)
 
     assert main(["approve", deploy_request, "--by", "alice", "--ledger", str(approvals)]) == 0
     capsys.readouterr()
 
-    assert main([
-        "deploy-model",
-        artifact_id,
-        "implementation",
-        "--implementation-provider",
-        "anthropic",
-        "--reviewer-provider",
-        "openai",
-        "--config",
-        str(config),
-        "--store",
-        str(store),
-        "--registry",
-        str(registry_path),
-    ]) == 0
+    assert (
+        main(
+            [
+                "deploy-model",
+                artifact_id,
+                "implementation",
+                "--implementation-provider",
+                "anthropic",
+                "--reviewer-provider",
+                "openai",
+                "--config",
+                str(config),
+                "--store",
+                str(store),
+                "--registry",
+                str(registry_path),
+            ]
+        )
+        == 0
+    )
     deploy_out = capsys.readouterr().out
     assert "DEPLOYED" in deploy_out
     assert "reviewer openai" in deploy_out
     assert ModelRegistry(registry_path).is_deployed(artifact_id, "implementation") is True
+
+
+def test_governance_identity_policy_cli_packet_and_verify(tmp_path, capsys):
+    approvals = tmp_path / "approvals.jsonl"
+    operators = tmp_path / "operators.jsonl"
+    config = tmp_path / "tier2.governed.yaml"
+    config.write_text(
+        f"""
+tier: 2
+governance:
+  enabled: true
+  approvals_path: {approvals}
+  operators:
+    - operator_id: alice
+      display_name: Alice Reviewer
+      role: approver
+      auth_method: local
+      status: active
+  policies:
+    - policy_id: budget
+      action: budget_increase
+      required_reviewers: 1
+      required_role: approver
+      separation_of_duties: true
+      max_scope: once
+      require_signature: true
+      required_evidence: ["safety"]
+""",
+        encoding="utf-8",
+    )
+
+    assert (
+        main(
+            [
+                "create-operator",
+                "alice",
+                "--display-name",
+                "Alice Reviewer",
+                "--role",
+                "approver",
+                "--operators",
+                str(operators),
+            ]
+        )
+        == 0
+    )
+    assert main(["list-operators", "--operators", str(operators)]) == 0
+    assert "Alice Reviewer" in capsys.readouterr().out
+
+    assert (
+        main(
+            [
+                "request-approval",
+                "budget_increase",
+                "--target",
+                "max_usd_per_run",
+                "--actor",
+                "casey",
+                "--rationale",
+                "needs a larger replay",
+                "--payload",
+                '{"max_usd_per_run": 20}',
+                "--risk",
+                "high",
+                "--evidence",
+                "safety",
+                "--rollback-plan",
+                "restore prior budget",
+                "--ledger",
+                str(approvals),
+            ]
+        )
+        == 0
+    )
+    request_id = re.search(r"request ([0-9a-f]{12})", capsys.readouterr().out).group(1)
+
+    assert (
+        main(
+            [
+                "approve",
+                request_id,
+                "--by",
+                "alice",
+                "--signing-key",
+                "secret",
+                "--config",
+                str(config),
+                "--ledger",
+                str(approvals),
+            ]
+        )
+        == 0
+    )
+    assert "APPROVED" in capsys.readouterr().out
+
+    assert main(["verify-governance", "--config", str(config), "--ledger", str(approvals)]) == 0
+    assert "verification OK" in capsys.readouterr().out
+
+    assert (
+        main(
+            [
+                "export-governance-packet",
+                request_id,
+                "--config",
+                str(config),
+                "--ledger",
+                str(approvals),
+            ]
+        )
+        == 0
+    )
+    packet = json.loads(capsys.readouterr().out)
+    assert packet["exact_payload"]["payload"] == {"max_usd_per_run": 20}
+    assert packet["risk_classification"] == "high"
+    assert packet["approval_history"][0]["operator_id"] == "alice"
+    assert packet["rollback_plan"] == "restore prior budget"

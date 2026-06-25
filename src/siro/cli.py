@@ -25,8 +25,9 @@ cycle uses:
 - ``summarize-research``  — per-family summary of the research suite (Goal 09).
 - ``propose-meta-change`` — propose a process change (Goal 05).
 - ``request-approval`` / ``list-approvals`` / ``approve`` / ``deny`` / ``revoke``
-                          — the Tier 2 governance workflow (Goal 10); ``approve``/``deny``/
-                            ``revoke`` are human-only — no agent can grant approval.
+  / ``create-operator`` / ``list-operators`` / ``revoke-operator`` / ``verify-governance``
+  / ``export-governance-packet`` — the Tier 2 governance workflow (Goals 10 + 19);
+                            approval and identity management are human-only.
 
 Uses only the standard library ``argparse`` to keep Tier 0 dependency-light.
 """
@@ -48,9 +49,11 @@ from .controller import Controller, select_best
 from .docs_check import DEFAULT_MANIFEST_PATH, check_docs
 from .governance import (
     DEFAULT_APPROVALS_PATH,
+    DEFAULT_OPERATORS_PATH,
     ApprovalLedger,
     GovernanceDenied,
     GovernanceGate,
+    OperatorLedger,
 )
 from .memory import ResearchMemory, failure_signature
 from .meta import MetaChangeStore, MetaResearcher
@@ -95,6 +98,7 @@ from .schemas import (
     GovernedAction,
     MetaChangeRecord,
     MetaRecommendation,
+    OperatorRole,
 )
 from .storage import (
     DEFAULT_STORE_PATH,
@@ -125,8 +129,10 @@ def _build_runtime(
     config = load_config(config_path)
     model = config.client_for_role(role)
     budget = None if config.budget.unbounded else BudgetTracker(config.budget, ledger=ledger)
-    label = f"tier {config.tier} (role {role} -> {getattr(model, 'provider', '?')}:" \
-            f"{getattr(model, 'model', '?')})"
+    label = (
+        f"tier {config.tier} (role {role} -> {getattr(model, 'provider', '?')}:"
+        f"{getattr(model, 'model', '?')})"
+    )
     return model, budget, label
 
 
@@ -174,9 +180,7 @@ def _cmd_run_training(args: argparse.Namespace) -> int:
     )
     print(f"config: {label}")
     try:
-        result = controller.run_training(
-            args.task_dir, model=model, generations=args.generations
-        )
+        result = controller.run_training(args.task_dir, model=model, generations=args.generations)
     except BudgetExceeded as exc:
         print(f"HALTED — budget ceiling breached ({exc.kind}): {exc}")
         print("Escalation required: a human must approve raising the ceiling (config-only).")
@@ -218,8 +222,10 @@ def _cmd_run_org(args: argparse.Namespace) -> int:
         ledger=ledger,
         budget=budget,
     )
-    print(f"config: tier {config.tier} ({args.config}); cross-model review: "
-          f"{'required' if orchestrator.require_cross_model else 'not required (all-local)'}")
+    print(
+        f"config: tier {config.tier} ({args.config}); cross-model review: "
+        f"{'required' if orchestrator.require_cross_model else 'not required (all-local)'}"
+    )
     try:
         result = orchestrator.run_cycle(args.objective, args.task_dir)
     except BudgetExceeded as exc:
@@ -272,8 +278,10 @@ def _cmd_run_research(args: argparse.Namespace) -> int:
             return 0
         tasks = [Path(t.path) for t in discovered]
 
-    print(f"config: tier {config.tier} ({args.config}); cross-model review: "
-          f"{'required' if orchestrator.require_cross_model else 'not required (all-local)'}")
+    print(
+        f"config: tier {config.tier} ({args.config}); cross-model review: "
+        f"{'required' if orchestrator.require_cross_model else 'not required (all-local)'}"
+    )
     print(f"run-research: {len(tasks)} task(s), objective={args.objective!r}")
     for task_dir in tasks:
         try:
@@ -320,9 +328,7 @@ def _cmd_summarize_research(args: argparse.Namespace) -> int:
     print(f"Research attempts: {len(attempts)}  (from {source})")
     for family, s in summaries.items():
         cycles = (
-            f"{s.median_cycles_to_success:.1f}"
-            if s.median_cycles_to_success is not None
-            else "n/a"
+            f"{s.median_cycles_to_success:.1f}" if s.median_cycles_to_success is not None else "n/a"
         )
         print(f"\n[{family}]  tasks: {', '.join(s.task_ids)}")
         cost_per = "n/a" if s.cost_per_promotion is None else f"${s.cost_per_promotion:.4f}"
@@ -473,6 +479,9 @@ def _cmd_request_approval(args: argparse.Namespace) -> int:
         actor=args.actor,
         rationale=args.rationale,
         payload=payload,
+        risk=args.risk,
+        evidence=args.evidence,
+        rollback_plan=args.rollback_plan,
         scope=ApprovalScope(args.scope),
         expires_at=_expires_at(args.expires_in),
     )
@@ -504,23 +513,49 @@ def _cmd_list_approvals(args: argparse.Namespace) -> int:
 
 
 def _cmd_approve(args: argparse.Namespace) -> int:
-    gate = GovernanceGate(ApprovalLedger(args.ledger))
+    config = load_config(args.config) if args.config else None
+    gate = (
+        GovernanceGate.from_config(config, ledger=ApprovalLedger(args.ledger))
+        if config
+        else GovernanceGate(ApprovalLedger(args.ledger))
+    )
     try:
-        decision = gate.approve(args.request_id, by=args.by, expires_at=_expires_at(args.expires_in))
+        decision = gate.approve(
+            args.request_id,
+            by=args.by,
+            expires_at=_expires_at(args.expires_in),
+            signature=args.signature,
+            signing_key=args.signing_key,
+        )
     except (KeyError, ValueError) as exc:
         print(f"cannot approve: {exc}")
         return 2
-    print(f"APPROVED {decision.action.value} (request {decision.request_id}) by {decision.approver}")
-    print(f"  decision {decision.decision_id}  scope={decision.scope.value}  "
-          f"expires: {decision.expires_at or 'never'}")
+    print(
+        f"APPROVED {decision.action.value} (request {decision.request_id}) by {decision.approver}"
+    )
+    print(
+        f"  decision {decision.decision_id}  scope={decision.scope.value}  "
+        f"expires: {decision.expires_at or 'never'}"
+    )
     print(f"Recorded to {args.ledger}.")
     return 0
 
 
 def _cmd_deny(args: argparse.Namespace) -> int:
-    gate = GovernanceGate(ApprovalLedger(args.ledger))
+    config = load_config(args.config) if args.config else None
+    gate = (
+        GovernanceGate.from_config(config, ledger=ApprovalLedger(args.ledger))
+        if config
+        else GovernanceGate(ApprovalLedger(args.ledger))
+    )
     try:
-        decision = gate.deny(args.request_id, by=args.by, reason=args.reason)
+        decision = gate.deny(
+            args.request_id,
+            by=args.by,
+            reason=args.reason,
+            signature=args.signature,
+            signing_key=args.signing_key,
+        )
     except (KeyError, ValueError) as exc:
         print(f"cannot deny: {exc}")
         return 2
@@ -534,6 +569,83 @@ def _cmd_revoke(args: argparse.Namespace) -> int:
     rv = gate.revoke(args.decision_id, by=args.by, reason=args.reason)
     print(f"REVOKED decision {rv.decision_id} by {rv.by or '(unknown)'}")
     print(f"Recorded to {args.ledger}.")
+    return 0
+
+
+def _cmd_create_operator(args: argparse.Namespace) -> int:
+    ledger = OperatorLedger(args.operators)
+    try:
+        identity = ledger.create(
+            args.operator_id,
+            display_name=args.display_name,
+            role=OperatorRole(args.role),
+            auth_method=args.auth_method,
+        )
+    except ValueError as exc:
+        print(f"cannot create operator: {exc}")
+        return 2
+    print(f"CREATED operator {identity.operator_id} ({identity.role.value})")
+    print(f"Recorded to {args.operators}.")
+    return 0
+
+
+def _cmd_list_operators(args: argparse.Namespace) -> int:
+    identities = OperatorLedger(args.operators).latest()
+    if not identities:
+        print(f"No operators in {args.operators}.")
+        return 0
+    print(f"Operators in {args.operators}:")
+    for identity in identities.values():
+        print(
+            f"  {identity.operator_id:<16} {identity.status.value:<8} "
+            f"{identity.role.value:<10} {identity.display_name}"
+        )
+    return 0
+
+
+def _cmd_revoke_operator(args: argparse.Namespace) -> int:
+    try:
+        identity = OperatorLedger(args.operators).revoke(args.operator_id)
+    except KeyError as exc:
+        print(f"cannot revoke operator: {exc}")
+        return 2
+    print(f"REVOKED operator {identity.operator_id}")
+    print(f"Recorded to {args.operators}.")
+    return 0
+
+
+def _cmd_verify_governance(args: argparse.Namespace) -> int:
+    config = load_config(args.config) if args.config else None
+    gate = (
+        GovernanceGate.from_config(config, ledger=ApprovalLedger(args.ledger))
+        if config
+        else GovernanceGate(ApprovalLedger(args.ledger))
+    )
+    result = gate.verify()
+    for warning in result.warnings:
+        print(f"warning: {warning}")
+    for error in result.errors:
+        print(f"error: {error}")
+    if not result.ok:
+        print(f"Governance ledger verification FAILED for {args.ledger}.")
+        return 1
+    print(f"Governance ledger verification OK for {args.ledger}.")
+    return 0
+
+
+def _cmd_export_governance_packet(args: argparse.Namespace) -> int:
+    config = load_config(args.config) if args.config else None
+    gate = (
+        GovernanceGate.from_config(config, ledger=ApprovalLedger(args.ledger))
+        if config
+        else GovernanceGate(ApprovalLedger(args.ledger))
+    )
+    try:
+        packet = gate.governance_packet(args.request_id)
+    except KeyError as exc:
+        print(f"cannot export governance packet: {exc}")
+        return 2
+    print(json.dumps(packet, indent=2, sort_keys=True))
     return 0
 
 
@@ -567,10 +679,14 @@ def _cmd_run_scaled(args: argparse.Namespace) -> int:
         if policy.hard_backend_above_tier is not None
         else ""
     )
-    print(f"config: tier {config.tier} ({args.config}); governance "
-          f"{'on' if gate.enabled else 'off (compute tier > 0 needs Tier 2)'}; "
-          f"backend={backend_name}{hard_note}")
-    print(f"run-scaled: {task.task_id}  compute-tier={args.compute_tier}  experiment={experiment_id}")
+    print(
+        f"config: tier {config.tier} ({args.config}); governance "
+        f"{'on' if gate.enabled else 'off (compute tier > 0 needs Tier 2)'}; "
+        f"backend={backend_name}{hard_note}"
+    )
+    print(
+        f"run-scaled: {task.task_id}  compute-tier={args.compute_tier}  experiment={experiment_id}"
+    )
     try:
         result = runner.run(
             task,
@@ -582,30 +698,42 @@ def _cmd_run_scaled(args: argparse.Namespace) -> int:
         )
     except BackendPolicyError as exc:
         print(f"BLOCKED — {exc}")
-        print("Use a hard-isolation backend (e.g. --backend linux_guarded on a supported host) "
-              "or set compute.allow_local_dev for local development only.")
+        print(
+            "Use a hard-isolation backend (e.g. --backend linux_guarded on a supported host) "
+            "or set compute.allow_local_dev for local development only."
+        )
         return 2
     except ComputeAllocationError as exc:
         print(f"BLOCKED — {exc}")
         print("Pass the smaller compute tier first (promotion-before-budget), then retry.")
         return 2
     except GovernanceDenied as exc:
-        print(f"BLOCKED — compute tier {args.compute_tier} needs human approval "
-              f"(request {exc.request.request_id}).")
+        print(
+            f"BLOCKED — compute tier {args.compute_tier} needs human approval "
+            f"(request {exc.request.request_id})."
+        )
         print(f"Approve with: siro approve {exc.request.request_id} --by <human>")
         return 2
     except BudgetExceeded as exc:
-        print(f"HALTED — compute ceiling breached ({exc.kind}): {exc} "
-              f"(limit {exc.limit:g}, observed {exc.observed:g})")
+        print(
+            f"HALTED — compute ceiling breached ({exc.kind}): {exc} "
+            f"(limit {exc.limit:g}, observed {exc.observed:g})"
+        )
         print("Escalation required: a human must approve a larger compute tier (governed).")
         return 2
 
     m = result.metric
     procs = "" if result.budget.max_processes is None else f" procs={result.budget.max_processes}"
-    print(f"  budget: wall_clock={result.budget.wall_clock_seconds:g}s "
-          f"memory={result.budget.memory_mb}MB{procs}  backend={result.backend}")
-    print(f"  metric: {m.primary_name}={m.primary:g} passed={m.passed} peak_mem={result.peak_memory_mb:.0f}MB")
-    print(f"  {result.attempt.status.value} — archived to {args.archive}; checkpoint in {args.checkpoints}")
+    print(
+        f"  budget: wall_clock={result.budget.wall_clock_seconds:g}s "
+        f"memory={result.budget.memory_mb}MB{procs}  backend={result.backend}"
+    )
+    print(
+        f"  metric: {m.primary_name}={m.primary:g} passed={m.passed} peak_mem={result.peak_memory_mb:.0f}MB"
+    )
+    print(
+        f"  {result.attempt.status.value} — archived to {args.archive}; checkpoint in {args.checkpoints}"
+    )
     return 0
 
 
@@ -671,7 +799,9 @@ def _cmd_storage_export(args: argparse.Namespace) -> int:
 def _cmd_storage_verify(args: argparse.Namespace) -> int:
     """Verify the tamper-evident hash chains in the SQLite store (Goal 16)."""
     store = SQLiteStore(args.store, migrate=False)
-    streams = [args.stream] if args.stream else [s for s, spec in STREAMS.items() if spec.hash_chained]
+    streams = (
+        [args.stream] if args.stream else [s for s, spec in STREAMS.items() if spec.hash_chained]
+    )
     ok = True
     print(f"storage verify {args.store} (sqlite)")
     for stream in streams:
@@ -704,9 +834,11 @@ def _cmd_train_model(args: argparse.Namespace) -> int:
     )
     stability = assess_stability(open_incidents=args.open_incidents)
     train_config = {"learning_rate": args.learning_rate, "epochs": args.epochs}
-    print(f"config: tier {config.tier} ({args.config}); governance "
-          f"{'on' if gate.enabled else 'off (model-training is Tier 2)'}; "
-          f"stability {'green' if stability.stable else 'RED ' + str(stability.failures)}")
+    print(
+        f"config: tier {config.tier} ({args.config}); governance "
+        f"{'on' if gate.enabled else 'off (model-training is Tier 2)'}; "
+        f"stability {'green' if stability.stable else 'RED ' + str(stability.failures)}"
+    )
     try:
         artifact = trainer.train(
             args.experiment_id,
@@ -723,15 +855,21 @@ def _cmd_train_model(args: argparse.Namespace) -> int:
         print(f"BLOCKED — {exc}")
         return 2
     except GovernanceDenied as exc:
-        print(f"BLOCKED — weight-update experiment needs human approval "
-              f"(request {exc.request.request_id}).")
+        print(
+            f"BLOCKED — weight-update experiment needs human approval "
+            f"(request {exc.request.request_id})."
+        )
         print(f"Approve with: siro approve {exc.request.request_id} --by <human>")
         return 2
 
-    print(f"trained artifact {artifact.artifact_id}  passed={artifact.passed}  "
-          f"val_loss={artifact.val_loss:g}")
-    print(f"  lineage: base={artifact.base_model_hash} data={artifact.data_id}@{artifact.data_seed} "
-          f"code={artifact.code_version}")
+    print(
+        f"trained artifact {artifact.artifact_id}  passed={artifact.passed}  "
+        f"val_loss={artifact.val_loss:g}"
+    )
+    print(
+        f"  lineage: base={artifact.base_model_hash} data={artifact.data_id}@{artifact.data_seed} "
+        f"code={artifact.code_version}"
+    )
     print(f"  stored in {args.store}; archived to {args.archive}")
     print("NOT deployed — `siro deploy-model` is a separate approval + cross-model review.")
     return 0
@@ -760,13 +898,17 @@ def _cmd_deploy_model(args: argparse.Namespace) -> int:
         print(f"BLOCKED — {exc}")
         return 2
     except GovernanceDenied as exc:
-        print(f"BLOCKED — deploying to role {args.role!r} needs human approval "
-              f"(request {exc.request.request_id}).")
+        print(
+            f"BLOCKED — deploying to role {args.role!r} needs human approval "
+            f"(request {exc.request.request_id})."
+        )
         print(f"Approve with: siro approve {exc.request.request_id} --by <human>")
         return 2
 
-    print(f"DEPLOYED artifact {deployment.artifact_id} -> role {deployment.role} "
-          f"(approver {deployment.approver}, reviewer {deployment.reviewer_provider})")
+    print(
+        f"DEPLOYED artifact {deployment.artifact_id} -> role {deployment.role} "
+        f"(approver {deployment.approver}, reviewer {deployment.reviewer_provider})"
+    )
     print(f"Recorded to {args.registry}.")
     return 0
 
@@ -812,7 +954,9 @@ def _cmd_pricing_audit(args: argparse.Namespace) -> int:
         f"day=${config.budget.max_usd_per_day if config.budget.max_usd_per_day is not None else 'unbounded'} "
         f"tokens/call={config.budget.max_tokens_per_call if config.budget.max_tokens_per_call is not None else 'unbounded'}"
     )
-    print("Representative cycle costs use input/output token counts: small=10k/2k, medium=100k/20k, heavy=1M/200k.")
+    print(
+        "Representative cycle costs use input/output token counts: small=10k/2k, medium=100k/20k, heavy=1M/200k."
+    )
 
     for key, provider in sorted(config.providers.items()):
         backend = provider.backend.lower()
@@ -868,7 +1012,9 @@ def _cmd_provider_report(args: argparse.Namespace) -> int:
         return 0
 
     research_attempts = (
-        ResearchArchive(args.research_attempts).read_all() if args.research_attempts.exists() else []
+        ResearchArchive(args.research_attempts).read_all()
+        if args.research_attempts.exists()
+        else []
     )
     promoted_tasks = {a.task_id for a in research_attempts if a.status is AttemptStatus.PROMOTED}
     task_family = {a.task_id: (a.family or "(unknown)") for a in research_attempts}
@@ -886,7 +1032,9 @@ def _cmd_provider_report(args: argparse.Namespace) -> int:
         retries = sum(r.retry_count for r in scoped)
         promoted = len({r.experiment_id for r in scoped if r.experiment_id in promoted_tasks})
         cost_per = "n/a" if not promoted else f"${cost / promoted:.4f}"
-        print(f"\n[{provider}/{model} role={role}] calls={len(scoped)} tokens={tokens} cost=${cost:.4f}")
+        print(
+            f"\n[{provider}/{model} role={role}] calls={len(scoped)} tokens={tokens} cost=${cost:.4f}"
+        )
         print(
             f"  latency_ms: p50={_percentile(latencies, 50):.1f} "
             f"p95={_percentile(latencies, 95):.1f}"
@@ -901,7 +1049,9 @@ def _cmd_provider_report(args: argparse.Namespace) -> int:
             family_spend[family] = family_spend.get(family, 0.0) + row.cost_usd
         print(
             "  spend_by_family: "
-            + ", ".join(f"{family}=${amount:.4f}" for family, amount in sorted(family_spend.items()))
+            + ", ".join(
+                f"{family}=${amount:.4f}" for family, amount in sorted(family_spend.items())
+            )
         )
         if errors:
             kinds = Counter(r.final_error_kind for r in errors)
@@ -988,9 +1138,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_train.set_defaults(func=_cmd_run_training)
 
-    p_org = sub.add_parser(
-        "run-org", help="Run one full frontier-org research cycle (Goal 08)."
-    )
+    p_org = sub.add_parser("run-org", help="Run one full frontier-org research cycle (Goal 08).")
     p_org.add_argument(
         "task_dir",
         type=Path,
@@ -1116,6 +1264,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_req.add_argument("--target", default="", help="What the action applies to.")
     p_req.add_argument("--actor", default="", help="Who/what raised it (an agent or operator).")
     p_req.add_argument("--rationale", default="", help="Why it is requested.")
+    p_req.add_argument("--risk", default="medium", help="Risk classification for the packet.")
+    p_req.add_argument(
+        "--evidence",
+        action="append",
+        default=[],
+        help="Evaluator/safety evidence attachment or link; repeatable.",
+    )
+    p_req.add_argument("--rollback-plan", default="", help="Rollback plan for the governed action.")
     p_req.add_argument(
         "--payload",
         default="",
@@ -1139,15 +1295,35 @@ def build_parser() -> argparse.ArgumentParser:
     p_appr = sub.add_parser("approve", help="Approve a pending governance request (human-only).")
     p_appr.add_argument("request_id", help="The request id to approve.")
     p_appr.add_argument("--by", required=True, help="Human approver id (required).")
+    p_appr.add_argument(
+        "--signature", default="", help="External signature over the request proof."
+    )
+    p_appr.add_argument(
+        "--signing-key",
+        default=None,
+        help="Local development signing key used to create an HMAC proof; never stored.",
+    )
     p_appr.add_argument("--expires-in", type=float, default=None, help="Expiry in seconds.")
     p_appr.add_argument("--ledger", type=Path, default=DEFAULT_APPROVALS_PATH)
+    p_appr.add_argument(
+        "--config", type=Path, default=None, help="Tier config with policies/operators."
+    )
     p_appr.set_defaults(func=_cmd_approve)
 
     p_deny = sub.add_parser("deny", help="Deny a pending governance request (human-only).")
     p_deny.add_argument("request_id", help="The request id to deny.")
     p_deny.add_argument("--by", required=True, help="Human id (required).")
     p_deny.add_argument("--reason", default="", help="Why it was denied.")
+    p_deny.add_argument("--signature", default="", help="External signature over the denial proof.")
+    p_deny.add_argument(
+        "--signing-key",
+        default=None,
+        help="Local development signing key used to create an HMAC proof; never stored.",
+    )
     p_deny.add_argument("--ledger", type=Path, default=DEFAULT_APPROVALS_PATH)
+    p_deny.add_argument(
+        "--config", type=Path, default=None, help="Tier config with policies/operators."
+    )
     p_deny.set_defaults(func=_cmd_deny)
 
     p_rev = sub.add_parser("revoke", help="Revoke a granted governance decision (human-only).")
@@ -1156,6 +1332,47 @@ def build_parser() -> argparse.ArgumentParser:
     p_rev.add_argument("--reason", default="", help="Why it was revoked.")
     p_rev.add_argument("--ledger", type=Path, default=DEFAULT_APPROVALS_PATH)
     p_rev.set_defaults(func=_cmd_revoke)
+
+    p_op_create = sub.add_parser("create-operator", help="Create a local governance operator.")
+    p_op_create.add_argument("operator_id")
+    p_op_create.add_argument("--display-name", required=True)
+    p_op_create.add_argument(
+        "--role",
+        choices=[r.value for r in OperatorRole],
+        required=True,
+        help="Governance role for this operator.",
+    )
+    p_op_create.add_argument("--auth-method", default="local")
+    p_op_create.add_argument("--operators", type=Path, default=DEFAULT_OPERATORS_PATH)
+    p_op_create.set_defaults(func=_cmd_create_operator)
+
+    p_op_list = sub.add_parser("list-operators", help="List local governance operators.")
+    p_op_list.add_argument("--operators", type=Path, default=DEFAULT_OPERATORS_PATH)
+    p_op_list.set_defaults(func=_cmd_list_operators)
+
+    p_op_revoke = sub.add_parser("revoke-operator", help="Revoke a local governance operator.")
+    p_op_revoke.add_argument("operator_id")
+    p_op_revoke.add_argument("--operators", type=Path, default=DEFAULT_OPERATORS_PATH)
+    p_op_revoke.set_defaults(func=_cmd_revoke_operator)
+
+    p_gov_verify = sub.add_parser(
+        "verify-governance", help="Verify approval ledger identity/policy proofs."
+    )
+    p_gov_verify.add_argument("--ledger", type=Path, default=DEFAULT_APPROVALS_PATH)
+    p_gov_verify.add_argument(
+        "--config", type=Path, default=None, help="Tier config with policies/operators."
+    )
+    p_gov_verify.set_defaults(func=_cmd_verify_governance)
+
+    p_packet = sub.add_parser(
+        "export-governance-packet", help="Export a governance packet as JSON."
+    )
+    p_packet.add_argument("request_id")
+    p_packet.add_argument("--ledger", type=Path, default=DEFAULT_APPROVALS_PATH)
+    p_packet.add_argument(
+        "--config", type=Path, default=None, help="Tier config with policies/operators."
+    )
+    p_packet.set_defaults(func=_cmd_export_governance_packet)
 
     # --- governed compute scale-up (Tier 2, Goal 11) -----------------------
     p_scaled = sub.add_parser(
@@ -1229,9 +1446,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_train_model.add_argument("--actor", default="operator")
     p_train_model.add_argument("--rationale", default="")
-    p_train_model.add_argument(
-        "--config", type=Path, default=Path("config/tier2.governed.yaml")
-    )
+    p_train_model.add_argument("--config", type=Path, default=Path("config/tier2.governed.yaml"))
     p_train_model.add_argument("--archive", type=Path, default=DEFAULT_MODEL_ARTIFACTS_PATH)
     p_train_model.add_argument("--store", type=Path, default=DEFAULT_ARTIFACT_STORE_DIR)
     p_train_model.set_defaults(func=_cmd_train_model)
@@ -1253,9 +1468,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="The cross-model reviewer's provider (must differ from implementation).",
     )
     p_deploy.add_argument("--actor", default="operator")
-    p_deploy.add_argument(
-        "--config", type=Path, default=Path("config/tier2.governed.yaml")
-    )
+    p_deploy.add_argument("--config", type=Path, default=Path("config/tier2.governed.yaml"))
     p_deploy.add_argument("--store", type=Path, default=DEFAULT_ARTIFACT_STORE_DIR)
     p_deploy.add_argument("--registry", type=Path, default=DEFAULT_MODEL_REGISTRY_PATH)
     p_deploy.set_defaults(func=_cmd_deploy_model)
@@ -1275,8 +1488,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=DEFAULT_MANIFEST_PATH,
         help=(
-            "Goal manifest path, relative to --root by default "
-            f"(default: {DEFAULT_MANIFEST_PATH})."
+            f"Goal manifest path, relative to --root by default (default: {DEFAULT_MANIFEST_PATH})."
         ),
     )
     p_docs.set_defaults(func=_cmd_check_docs)
@@ -1343,35 +1555,62 @@ def build_parser() -> argparse.ArgumentParser:
     p_smig = sub.add_parser(
         "storage-migrate", help="Create/migrate the SQLite research store schema (Goal 16)."
     )
-    p_smig.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH,
-                        help=f"SQLite store path (default: {DEFAULT_STORE_PATH}).")
+    p_smig.add_argument(
+        "--store",
+        type=Path,
+        default=DEFAULT_STORE_PATH,
+        help=f"SQLite store path (default: {DEFAULT_STORE_PATH}).",
+    )
     p_smig.set_defaults(func=_cmd_storage_migrate)
 
     p_simp = sub.add_parser(
         "storage-import", help="Import existing JSONL archives into the SQLite store (Goal 16)."
     )
-    p_simp.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH,
-                        help=f"SQLite store path (default: {DEFAULT_STORE_PATH}).")
-    p_simp.add_argument("--from-dir", type=Path, default=None,
-                        help="Directory of <stream>.jsonl files (default: canonical runs/* paths).")
+    p_simp.add_argument(
+        "--store",
+        type=Path,
+        default=DEFAULT_STORE_PATH,
+        help=f"SQLite store path (default: {DEFAULT_STORE_PATH}).",
+    )
+    p_simp.add_argument(
+        "--from-dir",
+        type=Path,
+        default=None,
+        help="Directory of <stream>.jsonl files (default: canonical runs/* paths).",
+    )
     p_simp.set_defaults(func=_cmd_storage_import)
 
     p_sexp = sub.add_parser(
         "storage-export", help="Export the SQLite store back to JSONL files (Goal 16)."
     )
-    p_sexp.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH,
-                        help=f"SQLite store path (default: {DEFAULT_STORE_PATH}).")
-    p_sexp.add_argument("--to-dir", type=Path, default=Path("runs/export"),
-                        help="Output directory for <stream>.jsonl files (default: runs/export).")
+    p_sexp.add_argument(
+        "--store",
+        type=Path,
+        default=DEFAULT_STORE_PATH,
+        help=f"SQLite store path (default: {DEFAULT_STORE_PATH}).",
+    )
+    p_sexp.add_argument(
+        "--to-dir",
+        type=Path,
+        default=Path("runs/export"),
+        help="Output directory for <stream>.jsonl files (default: runs/export).",
+    )
     p_sexp.set_defaults(func=_cmd_storage_export)
 
     p_sver = sub.add_parser(
         "storage-verify", help="Verify tamper-evident hash chains in the SQLite store (Goal 16)."
     )
-    p_sver.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH,
-                        help=f"SQLite store path (default: {DEFAULT_STORE_PATH}).")
-    p_sver.add_argument("--stream", default=None,
-                        help="Verify only this stream (default: all hash-chained streams).")
+    p_sver.add_argument(
+        "--store",
+        type=Path,
+        default=DEFAULT_STORE_PATH,
+        help=f"SQLite store path (default: {DEFAULT_STORE_PATH}).",
+    )
+    p_sver.add_argument(
+        "--stream",
+        default=None,
+        help="Verify only this stream (default: all hash-chained streams).",
+    )
     p_sver.set_defaults(func=_cmd_storage_verify)
 
     p_meta = sub.add_parser(

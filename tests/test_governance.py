@@ -16,8 +16,17 @@ from siro.governance import (
     GovernanceDenied,
     GovernanceGate,
     governed_action_hash,
+    signing_proof,
 )
-from siro.schemas import ApprovalScope, GovernedAction, _utcnow
+from siro.schemas import (
+    ApprovalScope,
+    GovernancePolicy,
+    GovernedAction,
+    OperatorIdentity,
+    OperatorRole,
+    OperatorStatus,
+    _utcnow,
+)
 
 
 def _gate(tmp_path):
@@ -61,11 +70,19 @@ def test_approved_action_authorizes_then_is_consumed_when_single_use(tmp_path):
 def test_standing_scope_authorizes_repeatedly(tmp_path):
     gate = _gate(tmp_path)
     payload = {"tier": 2}
-    req = gate.request(GovernedAction.TIER_CHANGE, "tier", payload=payload, scope=ApprovalScope.STANDING)
+    req = gate.request(
+        GovernedAction.TIER_CHANGE, "tier", payload=payload, scope=ApprovalScope.STANDING
+    )
     gate.approve(req.request_id, by="alice", scope=ApprovalScope.STANDING)
-    assert gate.authorize(GovernedAction.TIER_CHANGE, "tier", payload=payload, consume=True) is not None
+    assert (
+        gate.authorize(GovernedAction.TIER_CHANGE, "tier", payload=payload, consume=True)
+        is not None
+    )
     # Still valid on a second use (standing, not consumed).
-    assert gate.authorize(GovernedAction.TIER_CHANGE, "tier", payload=payload, consume=True) is not None
+    assert (
+        gate.authorize(GovernedAction.TIER_CHANGE, "tier", payload=payload, consume=True)
+        is not None
+    )
 
 
 # --- hash binding -----------------------------------------------------------
@@ -73,13 +90,27 @@ def test_standing_scope_authorizes_repeatedly(tmp_path):
 
 def test_approval_is_bound_to_exact_change(tmp_path):
     gate = _gate(tmp_path)
-    req = gate.request(GovernedAction.BUDGET_INCREASE, "max_usd_per_run", payload={"max_usd_per_run": 20.0})
+    req = gate.request(
+        GovernedAction.BUDGET_INCREASE, "max_usd_per_run", payload={"max_usd_per_run": 20.0}
+    )
     gate.approve(req.request_id, by="alice", scope=ApprovalScope.STANDING)
     # The approved change (20.0) authorizes; a different change (50.0) does not.
-    assert gate.authorize(GovernedAction.BUDGET_INCREASE, "max_usd_per_run", payload={"max_usd_per_run": 20.0})
-    assert gate.authorize(GovernedAction.BUDGET_INCREASE, "max_usd_per_run", payload={"max_usd_per_run": 50.0}) is None
+    assert gate.authorize(
+        GovernedAction.BUDGET_INCREASE, "max_usd_per_run", payload={"max_usd_per_run": 20.0}
+    )
+    assert (
+        gate.authorize(
+            GovernedAction.BUDGET_INCREASE, "max_usd_per_run", payload={"max_usd_per_run": 50.0}
+        )
+        is None
+    )
     # A different action with the same payload also does not match.
-    assert gate.authorize(GovernedAction.TIER_CHANGE, "max_usd_per_run", payload={"max_usd_per_run": 20.0}) is None
+    assert (
+        gate.authorize(
+            GovernedAction.TIER_CHANGE, "max_usd_per_run", payload={"max_usd_per_run": 20.0}
+        )
+        is None
+    )
 
 
 def test_hash_is_stable_and_change_sensitive():
@@ -96,7 +127,9 @@ def test_hash_is_stable_and_change_sensitive():
 def test_expired_approval_does_not_authorize(tmp_path):
     gate = _gate(tmp_path)
     payload = {"max_usd_per_run": 20.0}
-    req = gate.request(GovernedAction.BUDGET_INCREASE, "b", payload=payload, scope=ApprovalScope.STANDING)
+    req = gate.request(
+        GovernedAction.BUDGET_INCREASE, "b", payload=payload, scope=ApprovalScope.STANDING
+    )
     gate.approve(req.request_id, by="alice", expires_at=_utcnow() - timedelta(seconds=1))
     assert gate.authorize(GovernedAction.BUDGET_INCREASE, "b", payload=payload) is None
     assert gate.status_of(req.request_id) == "expired"
@@ -105,7 +138,9 @@ def test_expired_approval_does_not_authorize(tmp_path):
 def test_revoked_approval_does_not_authorize(tmp_path):
     gate = _gate(tmp_path)
     payload = {"max_usd_per_run": 20.0}
-    req = gate.request(GovernedAction.BUDGET_INCREASE, "b", payload=payload, scope=ApprovalScope.STANDING)
+    req = gate.request(
+        GovernedAction.BUDGET_INCREASE, "b", payload=payload, scope=ApprovalScope.STANDING
+    )
     decision = gate.approve(req.request_id, by="alice", scope=ApprovalScope.STANDING)
     assert gate.authorize(GovernedAction.BUDGET_INCREASE, "b", payload=payload) is not None
     gate.revoke(decision.decision_id, by="alice", reason="changed my mind")
@@ -141,6 +176,132 @@ def test_no_agent_tool_can_approve():
     tool_factories = [n for n in tools.__all__ if n.endswith("_tool")]
     assert tool_factories  # sanity: there are tools
     assert not any("approv" in n or "govern" in n for n in tool_factories)
+
+
+# --- identity + policy hardening (Goal 19) ---------------------------------
+
+
+def _hardened_gate(tmp_path, policy: GovernancePolicy | None = None) -> GovernanceGate:
+    policies = {}
+    if policy is not None:
+        policies[policy.action] = policy
+    return GovernanceGate(
+        ApprovalLedger(tmp_path / "approvals.jsonl"),
+        operators={
+            "alice": OperatorIdentity(
+                operator_id="alice", display_name="Alice", role=OperatorRole.APPROVER
+            ),
+            "bob": OperatorIdentity(
+                operator_id="bob", display_name="Bob", role=OperatorRole.APPROVER
+            ),
+            "casey": OperatorIdentity(
+                operator_id="casey", display_name="Casey", role=OperatorRole.REQUESTER
+            ),
+            "revoked": OperatorIdentity(
+                operator_id="revoked",
+                display_name="Revoked",
+                role=OperatorRole.APPROVER,
+                status=OperatorStatus.REVOKED,
+            ),
+        },
+        policies=policies,
+    )
+
+
+def test_unknown_inactive_or_unauthorized_operator_cannot_approve(tmp_path):
+    gate = _hardened_gate(tmp_path)
+    req = gate.request(GovernedAction.BUDGET_INCREASE, "budget", payload={"max": 2})
+
+    with pytest.raises(ValueError, match="unknown operator"):
+        gate.approve(req.request_id, by="mallory", signing_key="k")
+    with pytest.raises(ValueError, match="inactive"):
+        gate.approve(req.request_id, by="revoked", signing_key="k")
+    with pytest.raises(ValueError, match="requires 'approver'"):
+        gate.approve(req.request_id, by="casey", signing_key="k")
+    with pytest.raises(ValueError, match="agent"):
+        gate.approve(req.request_id, by="agent:implementation", signing_key="k")
+
+
+def test_signed_approval_records_verify_against_canonical_request_hash(tmp_path):
+    gate = _hardened_gate(tmp_path)
+    req = gate.request(GovernedAction.BUDGET_INCREASE, "budget", payload={"max": 2})
+    decision = gate.approve(req.request_id, by="alice", signing_key="secret")
+
+    assert decision.operator_id == "alice"
+    assert decision.signature_verified is True
+    assert decision.signature_payload_hash
+    assert decision.signature == signing_proof(req, "alice", "secret")
+    assert gate.verify().ok is True
+
+
+def test_policy_can_require_two_distinct_approvers(tmp_path):
+    policy = GovernancePolicy(
+        policy_id="two-person",
+        action=GovernedAction.HIGH_RISK_ACTION,
+        required_reviewers=2,
+        required_role=OperatorRole.APPROVER,
+        require_signature=True,
+    )
+    gate = _hardened_gate(tmp_path, policy)
+    payload = {"change": "irreversible"}
+    req = gate.request(GovernedAction.HIGH_RISK_ACTION, "danger", payload=payload)
+
+    gate.approve(req.request_id, by="alice", signing_key="a")
+    assert gate.authorize(GovernedAction.HIGH_RISK_ACTION, "danger", payload=payload) is None
+
+    gate.approve(req.request_id, by="alice", signing_key="a")
+    assert gate.authorize(GovernedAction.HIGH_RISK_ACTION, "danger", payload=payload) is None
+
+    gate.approve(req.request_id, by="bob", signing_key="b")
+    assert gate.authorize(GovernedAction.HIGH_RISK_ACTION, "danger", payload=payload) is not None
+
+
+def test_policy_separates_requester_from_approver(tmp_path):
+    gate = _hardened_gate(tmp_path)
+    req = gate.request(
+        GovernedAction.BUDGET_INCREASE,
+        "budget",
+        actor="alice",
+        payload={"max": 2},
+    )
+    with pytest.raises(ValueError, match="distinct"):
+        gate.approve(req.request_id, by="alice", signing_key="a")
+
+
+def test_legacy_ledger_decisions_remain_readable_but_marked_legacy(tmp_path):
+    gate = _gate(tmp_path)
+    req = gate.request(GovernedAction.BUDGET_INCREASE, "budget", payload={"max": 2})
+    legacy = gate.approve(req.request_id, by="old-human")
+
+    hardened = _hardened_gate(tmp_path)
+    decisions = hardened.ledger.decisions()
+    assert decisions[0].approver == "old-human"
+    assert decisions[0].operator_id == ""
+    result = hardened.verify()
+    assert result.ok is True
+    assert any(legacy.decision_id in warning and "legacy" in warning for warning in result.warnings)
+
+
+def test_governance_packet_exports_payload_evidence_history_and_rollback(tmp_path):
+    gate = _hardened_gate(tmp_path)
+    req = gate.request(
+        GovernedAction.BUDGET_INCREASE,
+        "budget",
+        actor="casey",
+        rationale="needs one larger run",
+        payload={"max": 2},
+        risk="high",
+        evidence=["safety", "eval"],
+        rollback_plan="restore previous budget",
+    )
+    gate.approve(req.request_id, by="alice", signing_key="a")
+
+    packet = gate.governance_packet(req.request_id)
+    assert packet["exact_payload"]["payload"] == {"max": 2}
+    assert packet["risk_classification"] == "high"
+    assert packet["evaluator_safety_evidence"] == ["safety", "eval"]
+    assert packet["approval_history"][0]["operator_id"] == "alice"
+    assert packet["rollback_plan"] == "restore previous budget"
 
 
 # --- tier is config-only ----------------------------------------------------

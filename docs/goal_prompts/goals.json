@@ -1,184 +1,209 @@
 {
-  "goals": [
-    {
-      "number": 1,
-      "title": "Project scaffold",
-      "status": "implemented",
-      "category": "Tier 0",
-      "prompt_path": "docs/goal_prompts/goal_01_project_scaffold.md",
-      "artifacts": ["src/siro/schemas.py", "src/siro/archive.py", "src/siro/safety.py", "src/siro/evaluator.py", "src/siro/cli.py"],
-      "summary": "Defines the initial package scaffold, typed schemas, JSONL archives, safety primitives, evaluator, and CLI surface."
-    },
-    {
-      "number": 2,
-      "title": "Code-improver loop",
-      "status": "implemented",
-      "category": "Tier 0",
-      "prompt_path": "docs/goal_prompts/goal_02_code_improver_loop.md",
-      "artifacts": ["src/siro/controller.py", "src/siro/sandbox.py", "tasks/code_improver/"],
-      "summary": "Runs the bounded propose, sandbox, evaluate, archive, and select loop for code-improver tasks."
-    },
-    {
-      "number": 3,
-      "title": "Research memory",
-      "status": "implemented",
-      "category": "Tier 0",
-      "prompt_path": "docs/goal_prompts/goal_03_research_memory.md",
-      "artifacts": ["src/siro/memory.py", "runs/memory.jsonl"],
-      "summary": "Records structured research memory, including negative results, and retrieves it for later proposals."
-    },
-    {
-      "number": 4,
-      "title": "Promotion gates",
-      "status": "implemented",
-      "category": "Tier 0",
-      "prompt_path": "docs/goal_prompts/goal_04_eval_and_safety_gates.md",
-      "artifacts": ["src/siro/gates.py"],
-      "summary": "Adds code-integrity, safety, reproducibility, and hidden-test gates before promotion."
-    },
-    {
-      "number": 5,
-      "title": "Meta-research loop",
-      "status": "implemented",
-      "category": "Tier 0",
-      "prompt_path": "docs/goal_prompts/goal_05_meta_research_loop.md",
-      "artifacts": ["src/siro/meta.py", "runs/meta_changes.jsonl"],
-      "summary": "Adds the bounded outer loop that proposes reversible process improvements and validates them by fixed A/B benchmarks."
-    },
-    {
-      "number": 6,
-      "title": "Tiny-training autoresearch",
-      "status": "implemented",
-      "category": "Tier 0",
-      "prompt_path": "docs/goal_prompts/goal_06_local_training_autoresearch.md",
-      "artifacts": ["src/siro/training.py", "src/siro/training_task.py", "tasks/training/"],
-      "summary": "Applies the same improvement loop to bounded pure-Python training configurations and validation loss."
-    },
-    {
-      "number": 7,
-      "title": "Provider abstraction",
-      "status": "implemented",
-      "category": "Tier 1",
-      "prompt_path": "docs/goal_prompts/goal_07_provider_abstraction.md",
-      "artifacts": ["src/siro/providers/", "src/siro/config.py", "src/siro/budget.py", "config/"],
-      "summary": "Introduces provider-agnostic model clients, tier config, and token/USD budget enforcement."
-    },
-    {
-      "number": 8,
-      "title": "Frontier research org",
-      "status": "implemented",
-      "category": "Tier 1",
-      "prompt_path": "docs/goal_prompts/goal_08_frontier_research_org.md",
-      "artifacts": ["src/siro/orchestrator.py", "src/siro/agents/", "src/siro/tools.py", "prompts/"],
-      "summary": "Runs the full model-backed research organization with typed roles, control-plane tools, and cross-model safety review."
-    },
-    {
-      "number": 9,
-      "title": "Research-shaped task suite",
-      "status": "implemented",
-      "category": "Tier 1",
-      "prompt_path": "docs/goal_prompts/goal_09_research_task_suite.md",
-      "artifacts": ["src/siro/research.py", "tasks/research/"],
-      "summary": "Adds research tasks, objective evaluation harnesses, reproducibility checks, and per-family summaries."
-    },
-    {
-      "number": 10,
-      "title": "Governance gate",
-      "status": "implemented",
-      "category": "Tier 2",
-      "prompt_path": "docs/goal_prompts/goal_10_governance_gate.md",
-      "artifacts": ["src/siro/governance.py", "config/tier2.governed.yaml"],
-      "summary": "Adds a default-deny human approval ledger for governed Tier 2 actions."
-    },
-    {
-      "number": 11,
-      "title": "Governed compute scale-up",
-      "status": "implemented",
-      "category": "Tier 2",
-      "prompt_path": "docs/goal_prompts/goal_11_governed_compute_scaleup.md",
-      "artifacts": ["src/siro/scale.py", "src/siro/sandbox.py"],
-      "summary": "Adds governed compute tiers, checkpointing, and guarded research evaluation with hard wall-clock and memory ceilings."
-    },
-    {
-      "number": 12,
-      "title": "Governed model-training",
-      "status": "implemented",
-      "category": "Tier 2",
-      "prompt_path": "docs/goal_prompts/goal_12_governed_model_training.md",
-      "artifacts": ["src/siro/model_training.py"],
-      "summary": "Adds governed offline weight-update experiments, artifact lineage, and separately approved deployment."
-    },
-    {
-      "number": 13,
-      "title": "Documentation consistency contract",
-      "status": "implemented",
-      "category": "Cross-tier hardening",
-      "prompt_path": "docs/goal_prompts/goal_13_docs_consistency_contract.md",
-      "artifacts": ["docs/goal_prompts/goals.json", "src/siro/docs_check.py"],
-      "summary": "Makes README, goal prompts, manifest entries, Self-improvement sections, and docs path privacy mechanically checked."
-    },
-    {
-      "number": 14,
-      "title": "Pricing audit and budget calibration",
-      "status": "implemented",
-      "category": "Cross-tier hardening",
-      "prompt_path": "docs/goal_prompts/goal_14_pricing_audit_and_budget_calibration.md",
-      "artifacts": ["src/siro/providers/pricing.py", "src/siro/cli.py", "config/"],
-      "summary": "Adds config-level price override metadata, pricing-audit reporting, and ledger metadata for cost estimates."
-    },
-    {
-      "number": 15,
-      "title": "Hard resource isolation backend",
-      "status": "implemented",
-      "category": "Cross-tier hardening",
-      "prompt_path": "docs/goal_prompts/goal_15_hard_resource_isolation.md",
-      "artifacts": ["src/siro/backends.py", "src/siro/sandbox.py", "src/siro/scale.py"],
-      "summary": "Adds a sandbox backend abstraction: a portable local monitor with process-tree accounting and a Linux cgroup v2 hard-isolation backend with kernel-enforced memory/process ceilings, plus a compute-tier backend policy."
-    },
-    {
-      "number": 16,
-      "title": "Durable research store and query layer",
-      "status": "implemented",
-      "category": "Cross-tier hardening",
-      "prompt_path": "docs/goal_prompts/goal_16_durable_research_store.md",
-      "artifacts": ["src/siro/storage.py", "src/siro/schemas.py", "src/siro/cli.py"],
-      "summary": "Adds a storage interface over every append-only stream with a SQLite backend (schema migrations, idempotency keys, hash-chained tamper-evidence, JSONL export/import) alongside the default JSONL backend, plus storage CLI verbs and store-backed summaries."
-    },
-    {
-      "number": 17,
-      "title": "Research benchmark suite expansion",
-      "status": "implemented",
-      "category": "Cross-tier hardening",
-      "prompt_path": "docs/goal_prompts/goal_17_benchmark_suite_expansion.md",
-      "artifacts": ["tasks/research/", "src/siro/research.py"],
-      "summary": "Expands the fixed benchmark suite across existing and new families with adversarial variants and richer per-family summaries."
-    },
-    {
-      "number": 18,
-      "title": "Provider operations and observability",
-      "status": "implemented",
-      "category": "Cross-tier hardening",
-      "prompt_path": "docs/goal_prompts/goal_18_provider_operations_and_observability.md",
-      "artifacts": ["src/siro/providers/ops.py", "src/siro/providers/_http.py", "src/siro/cli.py"],
-      "summary": "Adds provider error taxonomy, bounded retries, request metadata, provider ops config, and ledger-backed observability reports."
-    },
-    {
-      "number": 19,
-      "title": "Governance identity and policy hardening",
-      "status": "specified",
-      "category": "Cross-tier hardening",
-      "prompt_path": "docs/goal_prompts/goal_19_governance_identity_and_policy.md",
-      "artifacts": ["src/siro/governance.py", "src/siro/storage.py"],
-      "summary": "Specifies operator identities, signed approvals, policy templates, two-person approval, and ledger verification."
-    },
-    {
-      "number": 20,
-      "title": "Bounded operational pilot and cost-per-promotion report",
-      "status": "specified",
-      "category": "Cross-tier hardening",
-      "prompt_path": "docs/goal_prompts/goal_20_operational_pilot_report.md",
-      "artifacts": ["runs/pilots/", "reports/"],
-      "summary": "Specifies a fixed, budget-capped pilot comparing local, cheap-frontier, and strong-frontier runs before scale-up."
-    }
-  ]
+    "goals": [
+        {
+            "number": 1,
+            "title": "Project scaffold",
+            "status": "implemented",
+            "category": "Tier 0",
+            "prompt_path": "docs/goal_prompts/goal_01_project_scaffold.md",
+            "artifacts": [
+                "src/siro/schemas.py",
+                "src/siro/archive.py",
+                "src/siro/safety.py",
+                "src/siro/evaluator.py",
+                "src/siro/cli.py"
+            ],
+            "summary": "Defines the initial package scaffold, typed schemas, JSONL archives, safety primitives, evaluator, and CLI surface."
+        },
+        {
+            "number": 2,
+            "title": "Code-improver loop",
+            "status": "implemented",
+            "category": "Tier 0",
+            "prompt_path": "docs/goal_prompts/goal_02_code_improver_loop.md",
+            "artifacts": ["src/siro/controller.py", "src/siro/sandbox.py", "tasks/code_improver/"],
+            "summary": "Runs the bounded propose, sandbox, evaluate, archive, and select loop for code-improver tasks."
+        },
+        {
+            "number": 3,
+            "title": "Research memory",
+            "status": "implemented",
+            "category": "Tier 0",
+            "prompt_path": "docs/goal_prompts/goal_03_research_memory.md",
+            "artifacts": ["src/siro/memory.py", "runs/memory.jsonl"],
+            "summary": "Records structured research memory, including negative results, and retrieves it for later proposals."
+        },
+        {
+            "number": 4,
+            "title": "Promotion gates",
+            "status": "implemented",
+            "category": "Tier 0",
+            "prompt_path": "docs/goal_prompts/goal_04_eval_and_safety_gates.md",
+            "artifacts": ["src/siro/gates.py"],
+            "summary": "Adds code-integrity, safety, reproducibility, and hidden-test gates before promotion."
+        },
+        {
+            "number": 5,
+            "title": "Meta-research loop",
+            "status": "implemented",
+            "category": "Tier 0",
+            "prompt_path": "docs/goal_prompts/goal_05_meta_research_loop.md",
+            "artifacts": ["src/siro/meta.py", "runs/meta_changes.jsonl"],
+            "summary": "Adds the bounded outer loop that proposes reversible process improvements and validates them by fixed A/B benchmarks."
+        },
+        {
+            "number": 6,
+            "title": "Tiny-training autoresearch",
+            "status": "implemented",
+            "category": "Tier 0",
+            "prompt_path": "docs/goal_prompts/goal_06_local_training_autoresearch.md",
+            "artifacts": ["src/siro/training.py", "src/siro/training_task.py", "tasks/training/"],
+            "summary": "Applies the same improvement loop to bounded pure-Python training configurations and validation loss."
+        },
+        {
+            "number": 7,
+            "title": "Provider abstraction",
+            "status": "implemented",
+            "category": "Tier 1",
+            "prompt_path": "docs/goal_prompts/goal_07_provider_abstraction.md",
+            "artifacts": [
+                "src/siro/providers/",
+                "src/siro/config.py",
+                "src/siro/budget.py",
+                "config/"
+            ],
+            "summary": "Introduces provider-agnostic model clients, tier config, and token/USD budget enforcement."
+        },
+        {
+            "number": 8,
+            "title": "Frontier research org",
+            "status": "implemented",
+            "category": "Tier 1",
+            "prompt_path": "docs/goal_prompts/goal_08_frontier_research_org.md",
+            "artifacts": [
+                "src/siro/orchestrator.py",
+                "src/siro/agents/",
+                "src/siro/tools.py",
+                "prompts/"
+            ],
+            "summary": "Runs the full model-backed research organization with typed roles, control-plane tools, and cross-model safety review."
+        },
+        {
+            "number": 9,
+            "title": "Research-shaped task suite",
+            "status": "implemented",
+            "category": "Tier 1",
+            "prompt_path": "docs/goal_prompts/goal_09_research_task_suite.md",
+            "artifacts": ["src/siro/research.py", "tasks/research/"],
+            "summary": "Adds research tasks, objective evaluation harnesses, reproducibility checks, and per-family summaries."
+        },
+        {
+            "number": 10,
+            "title": "Governance gate",
+            "status": "implemented",
+            "category": "Tier 2",
+            "prompt_path": "docs/goal_prompts/goal_10_governance_gate.md",
+            "artifacts": ["src/siro/governance.py", "config/tier2.governed.yaml"],
+            "summary": "Adds a default-deny human approval ledger for governed Tier 2 actions."
+        },
+        {
+            "number": 11,
+            "title": "Governed compute scale-up",
+            "status": "implemented",
+            "category": "Tier 2",
+            "prompt_path": "docs/goal_prompts/goal_11_governed_compute_scaleup.md",
+            "artifacts": ["src/siro/scale.py", "src/siro/sandbox.py"],
+            "summary": "Adds governed compute tiers, checkpointing, and guarded research evaluation with hard wall-clock and memory ceilings."
+        },
+        {
+            "number": 12,
+            "title": "Governed model-training",
+            "status": "implemented",
+            "category": "Tier 2",
+            "prompt_path": "docs/goal_prompts/goal_12_governed_model_training.md",
+            "artifacts": ["src/siro/model_training.py"],
+            "summary": "Adds governed offline weight-update experiments, artifact lineage, and separately approved deployment."
+        },
+        {
+            "number": 13,
+            "title": "Documentation consistency contract",
+            "status": "implemented",
+            "category": "Cross-tier hardening",
+            "prompt_path": "docs/goal_prompts/goal_13_docs_consistency_contract.md",
+            "artifacts": ["docs/goal_prompts/goals.json", "src/siro/docs_check.py"],
+            "summary": "Makes README, goal prompts, manifest entries, Self-improvement sections, and docs path privacy mechanically checked."
+        },
+        {
+            "number": 14,
+            "title": "Pricing audit and budget calibration",
+            "status": "implemented",
+            "category": "Cross-tier hardening",
+            "prompt_path": "docs/goal_prompts/goal_14_pricing_audit_and_budget_calibration.md",
+            "artifacts": ["src/siro/providers/pricing.py", "src/siro/cli.py", "config/"],
+            "summary": "Adds config-level price override metadata, pricing-audit reporting, and ledger metadata for cost estimates."
+        },
+        {
+            "number": 15,
+            "title": "Hard resource isolation backend",
+            "status": "implemented",
+            "category": "Cross-tier hardening",
+            "prompt_path": "docs/goal_prompts/goal_15_hard_resource_isolation.md",
+            "artifacts": ["src/siro/backends.py", "src/siro/sandbox.py", "src/siro/scale.py"],
+            "summary": "Adds a sandbox backend abstraction: a portable local monitor with process-tree accounting and a Linux cgroup v2 hard-isolation backend with kernel-enforced memory/process ceilings, plus a compute-tier backend policy."
+        },
+        {
+            "number": 16,
+            "title": "Durable research store and query layer",
+            "status": "implemented",
+            "category": "Cross-tier hardening",
+            "prompt_path": "docs/goal_prompts/goal_16_durable_research_store.md",
+            "artifacts": ["src/siro/storage.py", "src/siro/schemas.py", "src/siro/cli.py"],
+            "summary": "Adds a storage interface over every append-only stream with a SQLite backend (schema migrations, idempotency keys, hash-chained tamper-evidence, JSONL export/import) alongside the default JSONL backend, plus storage CLI verbs and store-backed summaries."
+        },
+        {
+            "number": 17,
+            "title": "Research benchmark suite expansion",
+            "status": "implemented",
+            "category": "Cross-tier hardening",
+            "prompt_path": "docs/goal_prompts/goal_17_benchmark_suite_expansion.md",
+            "artifacts": ["tasks/research/", "src/siro/research.py"],
+            "summary": "Expands the fixed benchmark suite across existing and new families with adversarial variants and richer per-family summaries."
+        },
+        {
+            "number": 18,
+            "title": "Provider operations and observability",
+            "status": "implemented",
+            "category": "Cross-tier hardening",
+            "prompt_path": "docs/goal_prompts/goal_18_provider_operations_and_observability.md",
+            "artifacts": [
+                "src/siro/providers/ops.py",
+                "src/siro/providers/_http.py",
+                "src/siro/cli.py"
+            ],
+            "summary": "Adds provider error taxonomy, bounded retries, request metadata, provider ops config, and ledger-backed observability reports."
+        },
+        {
+            "number": 19,
+            "title": "Governance identity and policy hardening",
+            "status": "implemented",
+            "category": "Cross-tier hardening",
+            "prompt_path": "docs/goal_prompts/goal_19_governance_identity_and_policy.md",
+            "artifacts": [
+                "src/siro/governance.py",
+                "src/siro/schemas.py",
+                "src/siro/cli.py",
+                "config/tier2.governed.yaml"
+            ],
+            "summary": "Implements typed operator identities, signed approval proofs, policy templates, two-person approval, governance packet export, and identity/policy ledger verification."
+        },
+        {
+            "number": 20,
+            "title": "Bounded operational pilot and cost-per-promotion report",
+            "status": "specified",
+            "category": "Cross-tier hardening",
+            "prompt_path": "docs/goal_prompts/goal_20_operational_pilot_report.md",
+            "artifacts": ["runs/pilots/", "reports/"],
+            "summary": "Specifies a fixed, budget-capped pilot comparing local, cheap-frontier, and strong-frontier runs before scale-up."
+        }
+    ]
 }
