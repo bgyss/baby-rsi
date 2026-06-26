@@ -36,6 +36,10 @@ All design docs live under [`docs/`](docs/).
 | `docs/16_low_cost_validation_plan.md` | Cheap local-to-frontier validation ladder. |
 | `docs/17_operational_pilot_plan.md` | Fixed bounded Tier 0 vs frontier pilot plan and report contract. |
 
+For *operating* the implemented system (rather than its design), see
+[`docs/operating_guide.md`](docs/operating_guide.md) and the repo-local Claude Code skills
+in [`.claude/skills/`](.claude/skills/).
+
 Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`20` are implemented. Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
 
 ## Capability tiers
@@ -216,45 +220,32 @@ entry below names its goal, the modules/artifacts it added or will add, and what
   failure signatures; flags budget breaches or missing evidence; and emits a
   continue/revise/stop recommendation without approving any scale-up.
 
-The canonical interface is `uv run siro` (mise tasks are thin wrappers):
+## Operating the system
+
+The canonical interface is `uv run siro` (mise tasks are thin wrappers). Rather than a
+flat list of ~35 subcommands, two entry points keep the operating surface small:
+
+- **[`docs/operating_guide.md`](docs/operating_guide.md)** — a task-oriented tutorial that
+  walks the whole command surface in a learning flow: mental model → observe → run an
+  experiment → meta-loop → governed scale-up → approvals → pilot → storage → maintenance,
+  with the exact flags for every command.
+- **Repo-local Claude Code skills in [`.claude/skills/`](.claude/skills/)** — drive the
+  system from inside Claude Code with five intuitive verbs instead of memorizing flags:
+
+  | Skill | What it does |
+  |---|---|
+  | `/siro` | The control plane: explains the tier/plane/governance model and routes you to the right workflow. |
+  | `/siro-run` | Run an experiment at the right tier with safe defaults (code, training, full org, research, or governed scale-up). |
+  | `/siro-watch` | One monitoring snapshot — archive health, gate/safety/reproducibility failures, spend vs budget, pending governance. |
+  | `/siro-govern` | Walk the human approval workflow (request → review → approve/deny, with identity-signed proofs). |
+  | `/siro-pilot` | Run the bounded operational pilot end-to-end and interpret the recommendation. |
+
+The fastest first run is fully local and free:
 
 ```zsh
 uv run siro --help
-uv run siro summarize-runs runs/attempts.jsonl        # reflect on the archive
-uv run siro run-task tasks/code_improver/task_001     # per-task code inner loop (Goal 02), Tier 0
-uv run siro run-task tasks/code_improver/task_001 --config config/tier1.frontier.yaml  # Tier 1 (Goal 07)
-uv run siro run-training tasks/training/task_001      # per-task training inner loop (Goal 06)
-uv run siro run-org tasks/code_improver/task_001 --objective "Make sum_list simpler"  # full Tier 1 org cycle (Goal 08)
-uv run siro run-org tasks/code_improver/task_001 --config config/tier0.local.yaml     # same org, fully local — config-only
-uv run siro run-research                              # org runs every research-suite task (Goal 09)
-uv run siro run-research tasks/research/training/tiny_mlp --config config/tier0.local.yaml  # one family, fully local
-uv run siro summarize-research                        # per-family suite summary (Goal 09)
-uv run siro propose-meta-change runs/attempts.jsonl   # meta-research outer loop (Goal 05)
-uv run siro request-approval budget_increase --target max_usd_per_run --payload '{"max_usd_per_run":20}'  # Tier 2 governance request (Goal 10)
-uv run siro approve <request_id> --by <human>         # human-only grant; list-approvals/deny/revoke too (Goal 10)
-uv run siro create-operator alice --display-name "Alice Reviewer" --role approver  # local operator registry (Goal 19)
-uv run siro approve <request_id> --by alice --signing-key "$LOCAL_DEV_SIGNING_KEY" --config config/tier2.governed.yaml  # identity-validated signed proof (Goal 19)
-uv run siro verify-governance --config config/tier2.governed.yaml  # verify approval identities, hashes, and signatures (Goal 19)
-uv run siro export-governance-packet <request_id> --config config/tier2.governed.yaml  # request/payload/evidence/history packet (Goal 19)
-uv run siro run-scaled --compute-tier 1               # eval under a governed compute budget (Goal 11)
-uv run siro sandbox-backends                          # list resource-isolation backends + availability (Goal 15)
-uv run siro run-scaled --compute-tier 1 --backend linux_guarded  # hard, OS-enforced isolation on a supported host (Goal 15)
-uv run siro train-model exp1                          # governed weight-update experiment (Goal 12)
-uv run siro deploy-model <artifact_id> implementation --implementation-provider anthropic --reviewer-provider openai  # gated deploy (Goal 12)
-uv run siro check-docs                                # README/manifest/goal prompt/privacy contract (Goal 13)
-mise run check-docs                                   # thin wrapper around the same docs contract
-uv run siro pricing-audit --config config/tier1.frontier.yaml --strict  # pricing freshness and budget audit (Goal 14)
-mise run pricing-audit                                # thin wrapper around the strict Tier 1 pricing audit
-uv run siro storage-migrate --store runs/siro.db      # create/upgrade the durable SQLite store (Goal 16)
-uv run siro storage-import --store runs/siro.db       # idempotently load JSONL archives into SQLite (Goal 16)
-uv run siro storage-export --store runs/siro.db --to-dir runs/export  # SQLite -> JSONL backup, reader-compatible (Goal 16)
-uv run siro storage-verify --store runs/siro.db       # verify governance/artifact hash chains (Goal 16)
-uv run siro summarize-runs --store runs/siro.db       # summaries read JSONL or SQLite (Goal 16)
-uv run siro provider-report --model-calls runs/model_calls.jsonl  # provider spend/latency/retry/error report (Goal 18)
-uv run siro pilot-init                              # write fixed pilot plan + command transcript (Goal 20)
-uv run siro pilot-run                               # run required pilot arms into per-arm archives (Goal 20)
-uv run siro pilot-report                            # render cost-per-promotion pilot report from archived ledgers (Goal 20)
-uv run pytest tests/test_cli.py::test_tier2_model_training_smoke_path_uses_separate_train_and_deploy_approvals  # cheap Tier 2 approval/deploy smoke
+uv run siro summarize-research                        # read suite health (read-only, safe)
+uv run siro run-research tasks/research/training/tiny_mlp --config config/tier0.local.yaml  # one cycle, local
 ```
 
 ## Suggested use
