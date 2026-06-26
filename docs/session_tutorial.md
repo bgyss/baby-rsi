@@ -13,7 +13,7 @@ The transcript below is illustrative — exact numbers and ids will differ — b
 of every turn (read state → propose a plan → confirm anything governed → run → report the
 objective result) is what the skills are built to do.
 
-Throughout, two rules from `/siro` are always in force:
+Throughout, two rules from the `siro` router workflow are always in force:
 
 - **Tier 0 is the default** — local, offline, free. Going to Tier 1/2 is stated explicitly.
 - **Agents propose, humans approve.** Anything that spends money, mutates state, or is
@@ -94,6 +94,14 @@ uv run siro request-approval budget_increase \
 
 That is the Codex shape: read exact state, preview mutating actions, ask before acting, and
 surface governance instead of bypassing it.
+
+---
+
+## Claude Code conversational flow
+
+Claude Code follows the same operating pattern, but invokes the repo-local workflows as
+slash commands. The examples below use Claude Code transcript labels and `/siro-*` names;
+the commands and governance behavior are otherwise identical to the Codex flow above.
 
 ---
 

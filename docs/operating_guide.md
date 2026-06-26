@@ -26,6 +26,16 @@ The conversation itself is hosted in Claude Code or Codex by the skills — ther
 dialogue* actually looks like (rather than this flag-by-flag reference), read the worked
 [`session_tutorial.md`](session_tutorial.md).
 
+Host invocation differs, but the bounds do not:
+
+- **Claude Code** exposes the workflows as slash commands: `/siro`, `/siro-run`,
+  `/siro-watch`, `/siro-govern`, `/siro-pilot`.
+- **Codex** exposes the same workflows as repo-local skills named `siro`, `siro-run`,
+  `siro-watch`, `siro-govern`, and `siro-pilot`.
+
+Both hosts should use `--json` for precise read-only state, `--dry-run` before mutating or
+governed actions, and explicit user confirmation before spending money or writing archives.
+
 ## Mental model (read this first)
 
 Three ideas explain every command:

@@ -131,6 +131,14 @@ memorize the full subcommand set, use one of two entry points:
   the right tier), **`siro-watch`** (monitoring snapshot), **`siro-govern`** (approval
   workflow), **`siro-pilot`** (the bounded pilot). <!-- docs-privacy-allow -->
 
+Host split:
+
+- **Claude Code**: invoke the workflows as slash commands (`/siro`, `/siro-run`,
+  `/siro-watch`, `/siro-govern`, `/siro-pilot`).
+- **Codex**: invoke the repo-local skills by name (`siro`, `siro-run`, `siro-watch`,
+  `siro-govern`, `siro-pilot`). The Codex skills mirror the Claude Code workflows but use
+  Codex operating conventions instead of slash-command assumptions.
+
 Two global flags (Goal 21) keep the dialogue honest: `--dry-run` previews any command's tier
 and governance implications without acting, and `--json` makes the read-only summaries
 machine-readable. The fastest first run is fully local and free:
