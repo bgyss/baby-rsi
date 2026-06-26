@@ -23,11 +23,11 @@ The same loop, lifecycle, gates, and memory run at every tier; only the models b
 
 The system is **provider-agnostic**: any role binds to a local or frontier model via config (`agent_models`), never hardcoded. Selecting/lowering a tier is **config-only** — never a code change. Lowering the tier must always be safe.
 
-## Version control — prefer jj
+## Version control — prefer git in Codex, jj in Claude Code
 
-This repo uses **[jujutsu (`jj`)](https://jj-vcs.github.io/jj/) as the primary VCS**, colocated with git (both a `.jj/` and `.git/` directory are present, sharing one working copy). **Default to `jj` commands; reach for `git` only when something has no jj equivalent.** Because the backend is git, any `git` operation still works and stays in sync, but routine work should go through jj.
+This repo uses **[jujutsu (`jj`)](https://jj-vcs.github.io/jj/)** colocated with git (both a `.jj/` and `.git/` directory are present, sharing one working copy). **When working in Codex, prefer normal `git` commands instead of `jj`** because Codex has spotty jj support. Claude Code may continue to use `jj` as the primary workflow. Because the backend is git, either tool can interoperate, but do not mix them within one coherent change unless you need to recover or inspect state.
 
-Common mappings:
+Common `jj` mappings for Claude Code or manual use:
 
 | Task | jj |
 |---|---|
@@ -41,9 +41,10 @@ Common mappings:
 | Fetch | `jj git fetch` |
 
 Notes:
-- There is no staging area: the working copy *is* a commit (`@`). Don't run `git add`.
-- **Auto-commit every change** with `jj describe` (then `jj new` for the next unit) — see "Auto-commit every change" below. Pushing (`jj git push`) stays human-gated.
-- The git co-author / session trailers in this project's commit convention still apply to `jj describe` messages.
+- In Codex, use the normal git staging flow: `git status`, `git add`, `git commit`, and `git push` only when requested.
+- In Claude Code with `jj`, there is no staging area: the working copy *is* a commit (`@`). Don't run `git add`.
+- **Auto-commit every change** with the active tool for the agent: `git commit` in Codex, `jj describe` then `jj new` in Claude Code. Pushing remains human-gated.
+- The co-author / session trailers in this project's commit convention still apply to both git commit messages and `jj describe` messages.
 
 ## Toolchain (nix + mise + uv)
 
@@ -100,10 +101,10 @@ Consequences for implementation:
 
 ## Auto-commit every change
 
-Commit work as you go — **do not wait to be asked to commit** (this overrides the general "don't commit unless asked" default for this repo). After any change that leaves the working copy in a coherent state, record it with `jj describe` (the working copy *is* the commit `@`; no `git add`, no separate commit step), then start the next unit of work with `jj new`. This keeps every change auditable, which is the point of the project — the same reason negative results are first-class data.
+Commit work as you go — **do not wait to be asked to commit** (this overrides the general "don't commit unless asked" default for this repo). After any change that leaves the working copy in a coherent state, record it with the active VCS workflow: Codex should use `git add` + `git commit`, while Claude Code may use `jj describe` and then `jj new`. This keeps every change auditable, which is the point of the project — the same reason negative results are first-class data.
 
-- **Auto-commit, not auto-push.** `jj git push` and anything outward-facing remains human-gated, alongside the other escalations below.
-- Use the project's commit convention (co-author / session trailers) on every `jj describe` message.
+- **Auto-commit, not auto-push.** `git push`, `jj git push`, and anything outward-facing remain human-gated, alongside the other escalations below.
+- Use the project's commit convention (co-author / session trailers) on every commit or `jj describe` message.
 - For a *durably enforced* auto-commit (a Stop hook that runs `jj describe`/`jj new` automatically rather than relying on this instruction), configure it in `.claude/settings.json` via the `update-config` skill.
 
 ## Keep the README current
