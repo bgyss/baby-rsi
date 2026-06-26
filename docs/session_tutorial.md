@@ -21,6 +21,82 @@ Throughout, two rules from `/siro` are always in force:
 
 ---
 
+## Codex conversational flow
+
+In Codex, the same five workflows are repo-local skills rather than slash commands. A
+Codex session should look like this:
+
+> **You:** How's the research org doing?
+
+Codex uses **`siro-watch`** because this is read-only observation:
+
+```zsh
+uv run siro --json summarize-research
+uv run siro --json provider-report --model-calls runs/model_calls.jsonl
+uv run siro --json list-approvals --status pending
+```
+
+> **Codex:** The suite is healthy overall, but `policy` has not promoted in four cycles and
+> there is one reproducibility failure in `policy/sentiment_rules`. Spend is still `$0.00`
+> and there are no pending approvals. The next useful action is a Tier 0 policy-family run
+> or a closer look at the reproducibility failure.
+
+> **You:** Try one local cycle on `pair_count`.
+
+Codex uses **`siro-run`** and previews the mutating command before acting:
+
+```zsh
+uv run siro --dry-run run-research tasks/research/algorithm/pair_count --config config/tier0.local.yaml
+```
+
+> **Codex:** Plan:
+> - **Command:** `siro run-research tasks/research/algorithm/pair_count --config config/tier0.local.yaml`
+> - **Tier:** Tier 0 (local, offline, free)
+> - **Effect:** writes a research attempt to `runs/research_attempts.jsonl`
+> - **Governance:** none
+>
+> Run it?
+
+> **You:** Yes.
+
+```zsh
+uv run siro run-research tasks/research/algorithm/pair_count --config config/tier0.local.yaml
+```
+
+> **Codex:** Done. The archive records a promoted candidate: the primary metric improved,
+> reproducibility matched on rerun, and the safety gate passed. This is objective evaluator
+> evidence, not a model self-assessment.
+
+> **You:** Now try a bigger compute tier.
+
+Codex uses **`siro-run`** for the preview, then **`siro-govern`** if approval is needed:
+
+```zsh
+uv run siro --dry-run run-scaled tasks/research/algorithm/pair_count --compute-tier 1
+```
+
+> **Codex:** This is governed. Compute tier 1 requires a human approval bound to
+> `(experiment, tier)` and a recorded pass at the next-smaller tier. I can record the
+> request, but I cannot approve it. Should I create the approval request?
+
+> **You:** Yes, request it.
+
+```zsh
+uv run siro request-approval budget_increase \
+    --target "pair_count@tier1" \
+    --payload '{"experiment":"pair_count","tier":1}' \
+    --rationale "confirm the speedup holds under a larger compute budget"
+```
+
+> **Codex:** Recorded a pending request. A registered human operator must approve it with
+> `uv run siro approve <request_id> --by <operator-id>`. Once that is done, I can rerun the
+> scaled command and report the gate outcome.
+
+That is the Codex shape: read exact state, preview mutating actions, ask before acting, and
+surface governance instead of bypassing it.
+
+---
+
 ## 1. "How's the system doing?" — observe first
 
 > **You:** How's the research org doing right now?
