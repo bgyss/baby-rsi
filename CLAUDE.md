@@ -1,6 +1,9 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file is the canonical agent-instructions file for this repository. It
+provides guidance to Claude Code (claude.ai/code) and any other coding agent
+working with this codebase. `AGENTS.md` intentionally only points here; put
+future repository-guidance updates in this file.
 
 ## What this repository is
 
