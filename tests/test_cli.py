@@ -133,6 +133,116 @@ def test_summarize_runs_empty(tmp_path, capsys):
     assert "No attempts" in capsys.readouterr().out
 
 
+# --- Goal 21: conversational-interface affordances (structured output + dry-run) -------
+
+
+def _seed_attempt(path, *, status=AttemptStatus.PROMOTED, score=4000.0):
+    JSONLArchive(path).append(
+        Attempt(
+            attempt_id="a1",
+            task_id="t",
+            candidate=Candidate(candidate_id="a1", task_id="t", code="pass"),
+            evaluation=EvaluationResult(passed_tests=4, failed_tests=0, score=score),
+            status=status,
+        )
+    )
+
+
+def test_summarize_runs_json_is_parseable_and_default_unchanged(tmp_path, capsys):
+    path = tmp_path / "attempts.jsonl"
+    _seed_attempt(path)
+
+    # Structured output for a skill to parse.
+    assert main(["--json", "summarize-runs", str(path)]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["total_attempts"] == 1
+    assert payload["best"]["score"] == 4000.0
+    assert payload["status_counts"]["promoted"] == 1
+
+    # The human-readable default is unchanged (no --json).
+    assert main(["summarize-runs", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert "Attempts: 1" in out and "{" not in out
+
+
+def test_summarize_research_json_empty_is_valid(tmp_path, capsys):
+    assert main(["--json", "summarize-research", str(tmp_path / "none.jsonl")]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["total_attempts"] == 0 and payload["families"] == {}
+
+
+def test_provider_report_json_empty_is_valid(tmp_path, capsys):
+    assert main(["--json", "provider-report", "--model-calls", str(tmp_path / "none.jsonl")]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["rows"] == 0 and payload["groups"] == []
+
+
+def test_list_approvals_json_round_trips_a_request(tmp_path, capsys):
+    ledger = tmp_path / "approvals.jsonl"
+    assert (
+        main(
+            [
+                "request-approval",
+                "budget_increase",
+                "--target",
+                "max_usd_per_run",
+                "--payload",
+                json.dumps({"max_usd_per_run": 20}),
+                "--ledger",
+                str(ledger),
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert main(["--json", "list-approvals", "--ledger", str(ledger)]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert len(payload["requests"]) == 1
+    req = payload["requests"][0]
+    assert req["action"] == "budget_increase" and req["status"] == "pending"
+
+
+def test_dry_run_makes_no_side_effects(tmp_path, capsys):
+    archive = tmp_path / "attempts.jsonl"
+    ledger = tmp_path / "model_calls.jsonl"
+    rc = main(
+        [
+            "--dry-run",
+            "run-task",
+            "tasks/code_improver/task_001",
+            "--archive",
+            str(archive),
+            "--model-calls",
+            str(ledger),
+            "--config",
+            "config/tier1.frontier.yaml",
+        ]
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "DRY RUN" in out and "would run" in out
+    # No state changed, nothing spent, no ledger row written.
+    assert not archive.exists()
+    assert not ledger.exists()
+
+
+def test_dry_run_json_plan_reports_tier_and_governance(capsys):
+    assert main(["--dry-run", "--json", "run-scaled", "--compute-tier", "1"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["dry_run"] is True
+    assert plan["command"] == "run-scaled"
+    assert plan["read_only"] is False
+    assert "approval" in plan["governance"].lower()
+    assert "Tier 2" in plan["tier"]
+
+
+def test_dry_run_marks_read_only_commands(capsys):
+    assert main(["--dry-run", "--json", "summarize-research"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["read_only"] is True
+    assert plan["effect"] == "read-only"
+
+
 def test_propose_meta_change_records_proposal(tmp_path, capsys):
     archive_path = tmp_path / "attempts.jsonl"
     store_path = tmp_path / "meta_changes.jsonl"

@@ -33,6 +33,17 @@ while respecting the system's non-negotiable bounds. The full command reference 
 If the user's ask is fuzzy ("what should I do next?"), run **/siro-watch** first to read
 state, then recommend the next action from what you see.
 
+## Two affordances that make the dialogue work (Goal 21)
+
+The conversation is hosted here, in Claude Code — there is no `siro chat` REPL. Two global
+CLI flags let you read state and propose-before-acting reliably:
+
+- **`--json`** — read-only summaries (`summarize-runs`, `summarize-research`,
+  `provider-report`, `list-approvals`) emit machine-readable output you can parse precisely
+  instead of scraping prose. Prefer it whenever a decision depends on exact numbers.
+- **`--dry-run`** — prints any command's exact form, tier, and governance implications and
+  exits with no side effect. Use it to show the user the plan before running a real action.
+
 ## Always-true operating rules
 
 - **Read before you run.** Prefer `summarize-research` / `summarize-runs` first; the system

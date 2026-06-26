@@ -10,6 +10,19 @@ place to look when you want the exact flags.
 The canonical interface is `uv run siro <command>`; the `mise run ...` tasks are thin
 wrappers. Run `uv run siro --help` (or `uv run siro <command> --help`) at any time.
 
+Two global flags (Goal 21) make the surface conversational — they let the skills (and you)
+*read state precisely* and *propose before acting*:
+
+- **`--dry-run`** prints the exact command, its tier, and its governance implications, then
+  exits **without** any state change, spend, or ledger write. Use it to preview anything:
+  `uv run siro --dry-run run-scaled --compute-tier 1`.
+- **`--json`** makes the read-only summaries (`summarize-runs`, `summarize-research`,
+  `provider-report`, `list-approvals`) emit machine-readable output instead of prose:
+  `uv run siro --json summarize-research`. The default human-readable output is unchanged.
+
+The conversation itself is hosted in Claude Code by the skills — there is no `siro chat`
+REPL; the CLI stays non-interactive and scriptable.
+
 ## Mental model (read this first)
 
 Three ideas explain every command:

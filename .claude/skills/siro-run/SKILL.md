@@ -24,6 +24,20 @@ why) — never a model-judgment claim. Auto-commit any resulting change with `jj
 Task dirs live under `tasks/code_improver/`, `tasks/training/`, and
 `tasks/research/<family>/<task>/`. If unsure which tasks exist, list those directories.
 
+## Propose before you act (use `--dry-run`)
+
+Before running anything that spends money, writes archives, or is governed, preview it with
+the global `--dry-run` flag (Goal 21) and show the user the plan, then run the real command
+only after they confirm:
+
+```zsh
+uv run siro --dry-run run-research <task_dir> --config config/tier1.frontier.yaml
+```
+
+`--dry-run` prints the exact command, the tier, and the governance implications and exits
+without any state change, spend, or ledger write. A pure Tier 0, read-only, or clearly
+already-confirmed run can skip the preview.
+
 ## Tier selection (config-only)
 
 - Default / explicit local: `--config config/tier0.local.yaml`

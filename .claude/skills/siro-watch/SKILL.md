@@ -10,14 +10,18 @@ state. Use it to answer "how's the system doing?" and to decide what to do next.
 
 ## Gather (read-only)
 
-Run these and read the output:
+Run these and read the output. Add the global `--json` flag (Goal 21) when you want to
+parse precise state rather than prose — it makes each summary machine-readable:
 
 ```zsh
-uv run siro summarize-research                                # per-family suite health
-uv run siro summarize-runs runs/attempts.jsonl               # code-loop archive
-uv run siro provider-report --model-calls runs/model_calls.jsonl   # spend / latency / retries / errors
-uv run siro list-approvals --status pending                  # outstanding human-gated requests
+uv run siro --json summarize-research                        # per-family suite health
+uv run siro --json summarize-runs runs/attempts.jsonl        # code-loop archive
+uv run siro --json provider-report --model-calls runs/model_calls.jsonl   # spend / latency / retries / errors
+uv run siro --json list-approvals --status pending           # outstanding human-gated requests
 ```
+
+Drop `--json` for a quick human-readable glance; keep it when you need to compare numbers,
+compute deltas across ticks, or drive a decision from exact values.
 
 If a SQLite store is in use, add `--store runs/siro.db` to the summarize commands and run
 `uv run siro storage-verify --store runs/siro.db` to confirm the governance/artifact hash

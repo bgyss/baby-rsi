@@ -40,7 +40,7 @@ For *operating* the implemented system (rather than its design), see
 [`docs/operating_guide.md`](docs/operating_guide.md) and the repo-local Claude Code skills
 in [`.claude/skills/`](.claude/skills/).
 
-Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`20` are implemented; `21` (a conversational operating interface hosted in Claude Code) is specified. Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
+Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`21` are implemented (`21` makes operating the system a dialogue hosted in Claude Code). Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
 
 ## Capability tiers
 
@@ -66,7 +66,7 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goals 01-20 are implemented; Goals 21 are specified, not yet implemented.
+Goals 01-21 are implemented.
 The implemented set includes the Tier 2 governance, compute scale-up, model-training
 testbed work that landed in Goals 10–12, the docs consistency contract in Goal 13,
 the pricing audit/budget-calibration contract in Goal 14, the hard
@@ -220,15 +220,17 @@ entry below names its goal, the modules/artifacts it added or will add, and what
   failure signatures; flags budget breaches or missing evidence; and emits a
   continue/revise/stop recommendation without approving any scale-up.
 
-### Conversational operations (Goal 21) — specified, not yet implemented
+### Conversational operations (Goal 21)
 - **Goal 21 — Conversational operating interface in Claude Code** (`.claude/skills/`,
   `docs/operating_guide.md`, `src/siro/cli.py`): operate the system as a dialogue hosted
   inside Claude Code through the repo-local skills (intent → plan → confirm → act), rather
   than a memorized sequence of commands — explicitly **not** a separate REPL or `siro chat`
-  process. Adds only thin, non-interactive CLI affordances (opt-in structured `--json`
-  output on the read-only summaries and a side-effect-free dry-run/plan path) so the skills
-  can read precise state and propose-before-acting, with every governed or irreversible
-  action still human-confirmed and the plane/governance bounds unchanged.
+  process. Adds only thin, non-interactive CLI affordances: a global `--json` that makes the
+  read-only summaries (`summarize-runs`, `summarize-research`, `provider-report`,
+  `list-approvals`) emit machine-readable output the skills parse, and a global `--dry-run`
+  that prints the exact command, tier, and governance implications and exits **without** any
+  state change, spend, or ledger write. Every governed or irreversible action stays
+  human-confirmed and the plane/governance bounds are unchanged.
 
 ## Operating the system
 
@@ -250,11 +252,16 @@ flat list of ~35 subcommands, two entry points keep the operating surface small:
   | `/siro-govern` | Walk the human approval workflow (request → review → approve/deny, with identity-signed proofs). |
   | `/siro-pilot` | Run the bounded operational pilot end-to-end and interpret the recommendation. |
 
-The fastest first run is fully local and free:
+Because the conversation lives in Claude Code, the skills compose `uv run siro` commands
+for you. Two global flags (Goal 21) make that reliable: `--dry-run` previews any command
+(its tier and governance implications) without acting, and `--json` makes the read-only
+summaries machine-readable so the skills read precise state. The fastest first run is fully
+local and free:
 
 ```zsh
 uv run siro --help
-uv run siro summarize-research                        # read suite health (read-only, safe)
+uv run siro --json summarize-research                 # read suite health as JSON (read-only, safe)
+uv run siro --dry-run run-scaled --compute-tier 1     # preview a governed action — no state change
 uv run siro run-research tasks/research/training/tiny_mlp --config config/tier0.local.yaml  # one cycle, local
 ```
 
@@ -264,7 +271,6 @@ uv run siro run-research tasks/research/training/tiny_mlp --config config/tier0.
 2. For historical build context, read the implemented goal prompts in order: `01`–`06` for
    Tier 0, `07`–`09` for Tier 1, `10`–`12` for the Tier 2 governed testbed, and `13`–`18`
    for the cross-tier hardening contracts.
-3. Use `docs/operating_guide.md` (or the `.claude/skills/` skills) to exercise the current
-   implementation by tier; lowering a run from Tier 2 → 1 → 0 is config-only.
-4. Treat goal `21` (a conversational operating interface hosted in Claude Code) as the next
-   operability item on the roadmap.
+3. Operate the system in dialogue with the `.claude/skills/` skills, or follow
+   `docs/operating_guide.md` to exercise it by tier; lowering a run from Tier 2 → 1 → 0 is
+   config-only. Use `--dry-run` to preview any command and `--json` to read state precisely.

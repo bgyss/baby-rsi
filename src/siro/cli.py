@@ -38,7 +38,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections import Counter
+from dataclasses import asdict
 from datetime import date
 from pathlib import Path
 
@@ -146,6 +148,134 @@ def _build_runtime(
         f"{getattr(model, 'model', '?')})"
     )
     return model, budget, label
+
+
+def _wants_json(args: argparse.Namespace) -> bool:
+    """True when the user asked for machine-readable output (Goal 21)."""
+    return bool(getattr(args, "json", False))
+
+
+def _emit_json(obj: object) -> int:
+    """Print a single JSON document for a skill to parse (Goal 21). Read-only."""
+    print(json.dumps(obj, indent=2, default=str))
+    return 0
+
+
+# Goal 21 — a side-effect-free plan/dry-run table. Each command names what it does so the
+# conversational layer can "propose before it acts": whether the command mutates state /
+# spends money, and whether it is governed (human-gated). Read-only commands are safe to
+# run without confirmation; everything else should be confirmed first.
+_PLAN_INFO: dict[str, dict[str, str]] = {
+    "summarize-runs": {"effect": "read-only", "governance": "none"},
+    "summarize-research": {"effect": "read-only", "governance": "none"},
+    "provider-report": {"effect": "read-only", "governance": "none"},
+    "list-approvals": {"effect": "read-only", "governance": "none"},
+    "list-operators": {"effect": "read-only", "governance": "none"},
+    "sandbox-backends": {"effect": "read-only", "governance": "none"},
+    "check-docs": {"effect": "read-only", "governance": "none"},
+    "pricing-audit": {"effect": "read-only", "governance": "none"},
+    "verify-governance": {"effect": "read-only", "governance": "none"},
+    "export-governance-packet": {"effect": "read-only", "governance": "none"},
+    "storage-verify": {"effect": "read-only", "governance": "none"},
+    "storage-export": {"effect": "writes files (export only)", "governance": "none"},
+    "run-task": {"effect": "runs a loop; writes archives; spends at Tier ≥ 1", "governance": "none"},
+    "run-training": {
+        "effect": "runs training; writes archives; spends at Tier ≥ 1",
+        "governance": "none",
+    },
+    "run-org": {"effect": "runs the org; writes archives; spends at Tier ≥ 1", "governance": "none"},
+    "run-research": {
+        "effect": "runs the org on research tasks; writes archives; spends at Tier ≥ 1",
+        "governance": "none",
+    },
+    "propose-meta-change": {
+        "effect": "writes a meta-change proposal (apply stays human-gated)",
+        "governance": "proposal only; durable application is human-gated",
+    },
+    "run-scaled": {
+        "effect": "runs an eval under a compute budget; writes archives",
+        "governance": "compute-tier > 0 requires a human approval bound to (experiment, tier)",
+    },
+    "train-model": {
+        "effect": "produces model weights; writes artifact archive",
+        "governance": "requires a human-approved MODEL_TRAIN request + stability green",
+    },
+    "deploy-model": {
+        "effect": "binds a trained artifact to a role; writes the registry",
+        "governance": "requires a separate MODEL_DEPLOY approval + cross-model review",
+    },
+    "request-approval": {
+        "effect": "records a pending governance request",
+        "governance": "request only; a human still decides",
+    },
+    "approve": {
+        "effect": "records an approval decision",
+        "governance": "HUMAN-ONLY — run only on explicit human instruction with a real approver",
+    },
+    "deny": {
+        "effect": "records a denial decision",
+        "governance": "HUMAN-ONLY — run only on explicit human instruction",
+    },
+    "revoke": {
+        "effect": "revokes a granted decision",
+        "governance": "HUMAN-ONLY — run only on explicit human instruction",
+    },
+    "create-operator": {"effect": "writes the operator registry", "governance": "human-managed"},
+    "revoke-operator": {"effect": "revokes a local operator", "governance": "human-managed"},
+    "storage-migrate": {"effect": "creates/upgrades the SQLite store", "governance": "none"},
+    "storage-import": {"effect": "writes rows into the SQLite store", "governance": "none"},
+    "pilot-init": {"effect": "writes the fixed pilot plan + transcript", "governance": "none"},
+    "pilot-run": {
+        "effect": "runs pilot arms; frontier arms spend money; writes archives",
+        "governance": "none (budget ceilings still apply)",
+    },
+    "pilot-report": {"effect": "writes the pilot report file", "governance": "none"},
+}
+
+
+def _config_tier_label(args: argparse.Namespace) -> str:
+    """Best-effort tier label for a plan, derived from --config alone (config, not code)."""
+    config_path = getattr(args, "config", None)
+    if config_path is None:
+        return "n/a (no model tier for this command)"
+    name = Path(config_path).name
+    if "tier0" in name:
+        return "Tier 0 (local, offline, free)"
+    if "tier1" in name:
+        return "Tier 1 (frontier; spends money)"
+    if "tier2" in name:
+        return "Tier 2 (governed; human-gated)"
+    return f"from {config_path}"
+
+
+def _dry_run(args: argparse.Namespace, argv: list[str]) -> int:
+    """Goal 21: print the command, tier, and governance implications without acting.
+
+    Makes no state change, spends nothing, and writes no ledger row — this returns before
+    the command handler is ever called. It is the machine-checkable form of "propose first".
+    """
+    command = getattr(args, "command", "") or ""
+    reconstructed = "siro " + " ".join(tok for tok in argv if tok != "--dry-run")
+    info = _PLAN_INFO.get(command, {"effect": "unknown", "governance": "unknown"})
+    plan = {
+        "dry_run": True,
+        "command": command,
+        "would_run": reconstructed,
+        "tier": _config_tier_label(args),
+        "effect": info["effect"],
+        "governance": info["governance"],
+        "read_only": info["effect"] == "read-only",
+    }
+    if _wants_json(args):
+        return _emit_json(plan)
+    print("DRY RUN — no state changed, nothing spent, no ledger row written.")
+    print(f"  would run:   {plan['would_run']}")
+    print(f"  tier:        {plan['tier']}")
+    print(f"  effect:      {plan['effect']}")
+    print(f"  governance:  {plan['governance']}")
+    if not plan["read_only"]:
+        print("  confirm before running: this is not a read-only action.")
+    return 0
 
 
 def _cmd_run_task(args: argparse.Namespace) -> int:
@@ -333,9 +463,20 @@ def _cmd_summarize_research(args: argparse.Namespace) -> int:
         )
         source = str(args.path)
     if not attempts:
+        if _wants_json(args):
+            return _emit_json({"source": source, "total_attempts": 0, "families": {}})
         print(f"No research attempts found in {source}.")
         return 0
     summaries = summarize_research(attempts, ledger_rows=ledger_rows)
+
+    if _wants_json(args):
+        return _emit_json(
+            {
+                "source": source,
+                "total_attempts": len(attempts),
+                "families": {family: asdict(s) for family, s in summaries.items()},
+            }
+        )
 
     print(f"Research attempts: {len(attempts)}  (from {source})")
     for family, s in summaries.items():
@@ -367,6 +508,8 @@ def _cmd_summarize_runs(args: argparse.Namespace) -> int:
         attempts = JSONLArchive(args.path).read_all()
         source = str(args.path)
     if not attempts:
+        if _wants_json(args):
+            return _emit_json({"source": source, "total_attempts": 0})
         print(f"No attempts found in {source}.")
         return 0
 
@@ -376,6 +519,27 @@ def _cmd_summarize_runs(args: argparse.Namespace) -> int:
     passed_tests = sum(a.evaluation.passed_tests for a in evaluated)
     pass_rate = (passed_tests / total_tests) if total_tests else 0.0
     best = select_best(attempts)
+    failure_modes = Counter(
+        failure_signature(a.reason) for a in attempts if failure_signature(a.reason) != "none"
+    )
+
+    if _wants_json(args):
+        return _emit_json(
+            {
+                "source": source,
+                "total_attempts": len(attempts),
+                "status_counts": dict(status_counts),
+                "test_pass_rate": pass_rate,
+                "passed_tests": passed_tests,
+                "total_tests": total_tests,
+                "best": (
+                    None
+                    if best is None
+                    else {"attempt_id": best.attempt_id, "score": best.evaluation.score}
+                ),
+                "top_failure_modes": dict(failure_modes.most_common(5)),
+            }
+        )
 
     print(f"Attempts: {len(attempts)}  (from {source})")
     for status, count in sorted(status_counts.items()):
@@ -385,9 +549,6 @@ def _cmd_summarize_runs(args: argparse.Namespace) -> int:
         print(f"Best score: {best.evaluation.score:.1f}  (attempt {best.attempt_id})")
 
     # Top recurring failure modes — reflect on negative results (Goal 03).
-    failure_modes = Counter(
-        failure_signature(a.reason) for a in attempts if failure_signature(a.reason) != "none"
-    )
     if failure_modes:
         print("Top failure modes:")
         for signature, count in failure_modes.most_common(5):
@@ -509,17 +670,28 @@ def _cmd_request_approval(args: argparse.Namespace) -> int:
 def _cmd_list_approvals(args: argparse.Namespace) -> int:
     gate = GovernanceGate(ApprovalLedger(args.ledger))
     requests = gate.ledger.requests()
+    rows = [
+        {
+            "request_id": req.request_id,
+            "status": gate.status_of(req.request_id),
+            "action": req.action.value,
+            "target": req.target or None,
+            "actor": req.actor or None,
+        }
+        for req in requests
+    ]
+    if args.status:
+        rows = [r for r in rows if r["status"] == args.status]
+    if _wants_json(args):
+        return _emit_json({"ledger": str(args.ledger), "requests": rows})
     if not requests:
         print(f"No approval requests in {args.ledger}.")
         return 0
     print(f"Approval requests in {args.ledger}:")
-    for req in requests:
-        status = gate.status_of(req.request_id)
-        if args.status and status != args.status:
-            continue
+    for r in rows:
         print(
-            f"  {req.request_id}  {status:<8} {req.action.value:<26} "
-            f"target={req.target or '-'}  by={req.actor or '-'}"
+            f"  {r['request_id']}  {r['status']:<8} {r['action']:<26} "
+            f"target={r['target'] or '-'}  by={r['actor'] or '-'}"
         )
     return 0
 
@@ -1020,6 +1192,8 @@ def _percentile(values: list[float], pct: float) -> float:
 def _cmd_provider_report(args: argparse.Namespace) -> int:
     rows = ModelCallLedger(args.model_calls).read_all() if args.model_calls.exists() else []
     if not rows:
+        if _wants_json(args):
+            return _emit_json({"source": str(args.model_calls), "rows": 0, "groups": []})
         print(f"No model-call ledger rows found in {args.model_calls}.")
         return 0
 
@@ -1035,7 +1209,7 @@ def _cmd_provider_report(args: argparse.Namespace) -> int:
     for row in rows:
         groups.setdefault((row.provider, row.model, row.role or "(unknown)"), []).append(row)
 
-    print(f"Provider report: {len(rows)} model-call row(s) from {args.model_calls}")
+    report: list[dict] = []
     for (provider, model, role), scoped in sorted(groups.items()):
         tokens = sum(r.input_tokens + r.output_tokens for r in scoped)
         cost = sum(r.cost_usd for r in scoped)
@@ -1043,31 +1217,53 @@ def _cmd_provider_report(args: argparse.Namespace) -> int:
         errors = [r for r in scoped if r.final_error_kind]
         retries = sum(r.retry_count for r in scoped)
         promoted = len({r.experiment_id for r in scoped if r.experiment_id in promoted_tasks})
-        cost_per = "n/a" if not promoted else f"${cost / promoted:.4f}"
-        print(
-            f"\n[{provider}/{model} role={role}] calls={len(scoped)} tokens={tokens} cost=${cost:.4f}"
-        )
-        print(
-            f"  latency_ms: p50={_percentile(latencies, 50):.1f} "
-            f"p95={_percentile(latencies, 95):.1f}"
-        )
-        print(
-            f"  retries={retries} error_rate={(len(errors) / len(scoped)):.0%} "
-            f"escalations={len(errors)} cost_per_promotion={cost_per}"
-        )
         family_spend: dict[str, float] = {}
         for row in scoped:
             family = task_family.get(row.experiment_id, "(unknown)")
             family_spend[family] = family_spend.get(family, 0.0) + row.cost_usd
+        report.append(
+            {
+                "provider": provider,
+                "model": model,
+                "role": role,
+                "calls": len(scoped),
+                "tokens": tokens,
+                "cost_usd": cost,
+                "latency_p50_ms": _percentile(latencies, 50),
+                "latency_p95_ms": _percentile(latencies, 95),
+                "retries": retries,
+                "error_rate": len(errors) / len(scoped),
+                "escalations": len(errors),
+                "cost_per_promotion": (cost / promoted) if promoted else None,
+                "spend_by_family": dict(sorted(family_spend.items())),
+                "error_kinds": dict(Counter(r.final_error_kind for r in errors)),
+            }
+        )
+
+    if _wants_json(args):
+        return _emit_json({"source": str(args.model_calls), "rows": len(rows), "groups": report})
+
+    print(f"Provider report: {len(rows)} model-call row(s) from {args.model_calls}")
+    for g in report:
+        cost_per = "n/a" if g["cost_per_promotion"] is None else f"${g['cost_per_promotion']:.4f}"
+        print(
+            f"\n[{g['provider']}/{g['model']} role={g['role']}] "
+            f"calls={g['calls']} tokens={g['tokens']} cost=${g['cost_usd']:.4f}"
+        )
+        print(f"  latency_ms: p50={g['latency_p50_ms']:.1f} p95={g['latency_p95_ms']:.1f}")
+        print(
+            f"  retries={g['retries']} error_rate={g['error_rate']:.0%} "
+            f"escalations={g['escalations']} cost_per_promotion={cost_per}"
+        )
         print(
             "  spend_by_family: "
-            + ", ".join(
-                f"{family}=${amount:.4f}" for family, amount in sorted(family_spend.items())
-            )
+            + ", ".join(f"{family}=${amount:.4f}" for family, amount in g["spend_by_family"].items())
         )
-        if errors:
-            kinds = Counter(r.final_error_kind for r in errors)
-            print("  error_kinds: " + ", ".join(f"{kind}={count}" for kind, count in kinds.items()))
+        if g["error_kinds"]:
+            print(
+                "  error_kinds: "
+                + ", ".join(f"{kind}={count}" for kind, count in g["error_kinds"].items())
+            )
     return 0
 
 
@@ -1161,6 +1357,18 @@ def build_parser() -> argparse.ArgumentParser:
         description="Bounded, auditable self-improving research organization testbed.",
     )
     parser.add_argument("--version", action="version", version=f"siro {__version__}")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the command, tier, and governance implications without acting (Goal 21). "
+        "Makes no state change, spends nothing, and writes no ledger row.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit machine-readable JSON instead of human-readable text, where supported "
+        "(the read-only summaries and --dry-run) (Goal 21).",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_run = sub.add_parser("run-task", help="Run the per-task improvement loop (Goal 02).")
@@ -1819,7 +2027,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
+    if argv is None:
+        argv = sys.argv[1:]
     args = parser.parse_args(argv)
+    if getattr(args, "dry_run", False):
+        return _dry_run(args, argv)
     return args.func(args)
 
 
