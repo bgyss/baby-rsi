@@ -1,15 +1,15 @@
 # Self-Improving Research Organization
 
-This directory codifies a practical, bounded version of a **self-improving research organization**: a multi-agent system that can propose research hypotheses, implement experiments, evaluate results, preserve structured scientific memory, and improve its own research process under explicit safety and governance gates.
+A practical, **bounded** self-improving research organization: a multi-agent system that
+proposes research hypotheses, runs experiments in a sandbox, scores them against objective
+evaluators, preserves structured research memory, and improves its own process — all under
+explicit safety and governance gates. It draws on public work (Karpathy's `autoresearch`,
+Anthropic's framing of human-overseen recursive self-improvement, DeepMind's AlphaEvolve,
+Sakana's AI Scientist); see [`docs/12_references.md`](docs/12_references.md).
 
-The design is inspired by several public research directions:
-
-- Karpathy's `autoresearch`: an agent edits a training script, runs fixed-budget experiments, and optimizes validation bits-per-byte.
-- Anthropic's public framing of recursive self-improvement: AI systems increasingly assisting in building future AI systems, with humans still needed for oversight, judgment, and governance.
-- DeepMind's AlphaEvolve: evolutionary LLM-driven algorithm/code improvement with evaluator feedback.
-- Sakana AI's AI Scientist: automated idea generation, implementation, experimentation, paper writing, and review.
-
-This is **not** a blueprint for unrestricted autonomous model self-replication or uncontrolled frontier training. The intended implementation is a constrained local or lab-scale testbed with objective evaluators, sandboxing, audit logs, and human approval gates.
+This is **not** a blueprint for unrestricted autonomous self-replication or uncontrolled
+frontier training — it is a constrained local/lab-scale testbed with objective evaluators,
+sandboxing, audit logs, and human approval gates.
 
 ## Document map
 
@@ -36,227 +36,102 @@ All design docs live under [`docs/`](docs/).
 | `docs/16_low_cost_validation_plan.md` | Cheap local-to-frontier validation ladder. |
 | `docs/17_operational_pilot_plan.md` | Fixed bounded Tier 0 vs frontier pilot plan and report contract. |
 
-For *operating* the implemented system (rather than its design), see
+To **operate** the system (rather than read its design), see
 [`docs/operating_guide.md`](docs/operating_guide.md) and the repo-local Claude Code skills
-in [`.claude/skills/`](.claude/skills/).
-
-Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`21` are implemented (`21` makes operating the system a dialogue hosted in Claude Code). Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
+in [`.claude/skills/`](.claude/skills/). Build instructions are the staged goal prompts in
+[`docs/goal_prompts/`](docs/goal_prompts/) (`01`–`06` Tier 0, `07`–`09` Tier 1, `10`–`12`
+Tier 2 governance, `13`–`21` cross-tier hardening); each carries a `## Self-improvement`
+section binding it to [`docs/13_self_improvement_loop.md`](docs/13_self_improvement_loop.md).
 
 ## Capability tiers
 
-The same loop, gates, and memory run at every tier — only the models behind the agents and the governance around them change (`docs/07_model_providers_and_tiers.md`):
+The same loop, gates, and memory run at every tier — only the models behind the agents and
+the governance around them change ([`docs/07_model_providers_and_tiers.md`](docs/07_model_providers_and_tiers.md)).
+Lowering the tier is always **config-only and safe**.
 
 - **Tier 0** — fully local and offline; validates the machinery.
-- **Tier 1** — frontier LLMs (Claude / GPT) prototype the full research organization; network egress is allow-listed to model providers only, and candidate execution stays offline.
+- **Tier 1** — frontier LLMs (Claude / GPT) prototype the full org; network egress is
+  allow-listed to model providers only, and candidate execution stays offline.
 - **Tier 2** — governed scale-up; human-gated.
-
-Lowering the tier is always config-only and safe.
 
 ## Development environment
 
-The toolchain is layered: **nix** (`flake.nix`) provides a reproducible bootstrap shell with `mise` and native deps; **mise** (`mise.toml`) pins the Python/`uv` versions and runs tasks; **uv** manages Python dependencies. See `docs/09_local_testbed_architecture.md`.
+Layered toolchain: **nix** (`flake.nix`) provides a reproducible shell with `mise` and
+native deps; **mise** (`mise.toml`) pins the Python/`uv` versions and runs tasks; **uv**
+manages Python dependencies. See [`docs/09_local_testbed_architecture.md`](docs/09_local_testbed_architecture.md).
 
 ```zsh
 nix develop        # or: direnv allow  (auto-enters via .envrc)
 mise install       # python 3.11 + uv at pinned versions
 mise run sync      # uv sync
 mise run test      # uv run pytest
-mise tasks         # list available tasks
 ```
 
 ## Implementation status
 
-Goals 01-21 are implemented.
-The implemented set includes the Tier 2 governance, compute scale-up, model-training
-testbed work that landed in Goals 10–12, the docs consistency contract in Goal 13,
-the pricing audit/budget-calibration contract in Goal 14, the hard
-resource-isolation backend in Goal 15, the durable research store in Goal 16, and the
-expanded research benchmark suite in Goal 17, and provider operations/observability in
-Goal 18, governance identity/policy hardening in Goal 19, and the bounded operational
-pilot plan/report in Goal 20.
-Every implemented goal reuses the same lifecycle, gates, evaluator, and memory
-schema — only what fills the roles changes, by **config not code**, as the tier rises. Each
-entry below names its goal, the modules/artifacts it added or will add, and what it does.
+Goals 01-21 are implemented. Every goal reuses the same lifecycle, gates, evaluator, and
+memory schema — only what fills the roles changes, by **config not code**, as the tier
+rises. One line per goal below; **full per-goal detail is in
+[`docs/implementation_status.md`](docs/implementation_status.md)**.
 
 ### Tier 0 — local bounded testbed (Goals 01–06)
 
-- **Goal 01 — Project scaffold** (`schemas`, `archive`, `safety`, `evaluator`, `cli`):
-  explicit Pydantic schemas, an append-only JSONL archive + audit ledger, plane-isolation
-  primitives, the objective scoring function, and the CLI surface.
-- **Goal 02 — Code-improver loop** (`controller`, `sandbox`): the per-task inner loop
-  (propose → sandbox → evaluate → archive → select) with isolated, offline candidate
-  execution.
-- **Goal 03 — Research memory** (`memory`): durable structured records — negatives
-  included — distilled into the proposer prompt.
-- **Goal 04 — Promotion gates** (`gates`): code-integrity, safety, reproducibility, and
-  hidden-test gates that bound what the loop may promote.
-- **Goal 05 — Meta-research loop** (`meta`): the bounded outer loop — reflect on the
-  archive, propose a reversible process change (prompts/retrieval), A/B-test it on a fixed
-  benchmark, recommend promote/reject; separate `runs/meta_changes.jsonl` archive, generated
-  rollback plan, durable application held behind a human-approval flag.
-- **Goal 06 — Tiny-training autoresearch** (`training`, `training_task`): the same inner
-  loop applied to *training* — a candidate proposes a bounded `TrainConfig`, the sandbox
-  trains a fixed pure-Python MLP under a fixed wall-clock budget, and the best reproducible
-  validation-loss improvement is promoted; deltas in `runs/training_attempts.jsonl`.
+- **Goal 01 — Project scaffold** — schemas, JSONL archive + audit ledger, plane-isolation primitives, objective scoring, and the CLI surface.
+- **Goal 02 — Code-improver loop** — the per-task inner loop (propose → sandbox → evaluate → archive → select) with offline candidate execution.
+- **Goal 03 — Research memory** — durable structured records (negatives included) distilled into the proposer prompt.
+- **Goal 04 — Promotion gates** — code-integrity, safety, reproducibility, and hidden-test gates that bound what the loop may promote.
+- **Goal 05 — Meta-research loop** — the bounded outer loop: reflect, propose a reversible process change, A/B-test on a fixed benchmark; durable application stays human-gated.
+- **Goal 06 — Tiny-training autoresearch** — the inner loop applied to training a fixed pure-Python MLP under a wall-clock budget.
 
 ### Tier 1 — frontier research organization (Goals 07–09)
 
-- **Goal 07 — Provider abstraction** (`providers/`, `config`, `budget`): one `ModelClient`
-  interface behind local llama.cpp/LlamaBarn, Claude, and GPT backends (structured output,
-  tool use, per-call token/cost/latency accounting); tier + per-role provider binding from
-  `config/tierN.*.yaml`; per-run/per-day USD and per-call token ceilings that halt-and-
-  escalate. The Goal 02 loop runs Tier 0 (local) or Tier 1 (frontier) by config only; every
-  call logged to `runs/model_calls.jsonl`, no credential in the execution plane.
-- **Goal 08 — Frontier research org** (`orchestrator`, `agents/`, `tools`): one human
-  objective routed through model-backed roles (Hypothesis → Literature → triage →
-  Implementation → gates → offline sandbox → objective evaluator + Evaluation narrative →
-  cross-model Safety review → Interpretation → promotion gate → Memory Curator → agenda).
-  Each role is a provider-bindable agent with a typed `output_schema` and a **control-plane-
-  only** toolset (`read_allowed_file`, `query_memory`, `list_references`, `propose_patch` —
-  never shell/network). Safety binds to a *different* provider than Implementation (required
-  at Tier ≥ 1); safety-vs-gate disagreement escalates rather than tie-breaks; `tier: 1 → 0`
-  returns to fully-local with no code change.
-- **Goal 09 — Research-shaped task suite** (`research`, `tasks/research/`): real work
-  beyond single-function repair — three families (`algorithm/` scored by executed-line
-  count, `training/` by held-out validation loss under a wall-clock budget, `policy/` by
-  aggregate pass rate over a held-out benchmark). Each task has a `brief.md`, a `baseline/`
-  edit surface, a controller-owned objective `eval.py` (returns a typed `MetricRecord`), and
-  an optional `hidden/` set. `Orchestrator.run_research_cycle` runs the same lifecycle/gates;
-  promotion is decided by the objective evaluator and requires a *reproducible* improvement.
-  No-leakage is **enforced, not assumed** (held-out data handed to `eval.py` via
-  `SIRO_HIDDEN_PATH`, outside the candidate cwd). Attempts in `runs/research_attempts.jsonl`;
-  `summarize-research` reports per-family pass rate, median cycles to success, safety-gate
-  failures, token/USD spend, and strategy diversity.
+- **Goal 07 — Provider abstraction** — one `ModelClient` behind local/Claude/GPT; tier + per-role binding by config; token/USD ceilings; every call audited.
+- **Goal 08 — Frontier research org** — one objective routed through model-backed roles with a control-plane-only toolset and cross-model safety review.
+- **Goal 09 — Research-shaped task suite** — `algorithm`/`training`/`policy` families scored by controller-owned objective evaluators with enforced no-leakage.
 
 ### Tier 2 — governed scale-up (Goals 10–12)
 
-- **Goal 10 — Governance gate** (`governance`, `config/tier2.governed.yaml`): the Tier 2
-  human-approval workflow that makes the self-improvement bounds an enforced, auditable
-  artifact. A default-deny `GovernanceGate` over an append-only `runs/approvals.jsonl` ledger
-  of typed `ApprovalRequest`/`ApprovalDecision`/`ApprovalRevocation` records. A governed
-  action (the bounds of `docs/13` — budget/tier/evaluator/egress/permission/deploy changes)
-  proceeds only with a recorded, human-issued approval **bound to the exact change by content
-  hash**; absent one it records a pending request and raises `GovernanceDenied` (halt +
-  escalate). Approvals are single-use or standing, expiring, and revocable; `approve` /
-  `deny` / `revoke` are human-only CLI verbs — no agent tool grants approval. Enabled only at
-  Tier ≥ 2 by config; lowering the tier disables the capability with no code change.
-- **Goal 11 — Governed compute scale-up** (`scale`, `sandbox.run_guarded`): larger compute /
-  longer experiments under governance. Compute budget tiers (`ComputeBudget` = a hard
-  wall-clock + memory ceiling); a `ComputeAllocator` grants a tier only with **both** a
-  recorded pass at the next-smaller tier (promotion-before-budget) **and** a Goal 10 approval
-  bound to the exact `(experiment, tier)` — otherwise it refuses/escalates. The execution
-  plane's ceilings are enforced by `Sandbox.run_guarded`: a hard wall-clock deadline plus a
-  `ps`-based memory monitor that kills the process group on breach; a breach halts and
-  escalates (`BudgetExceeded`) and is recorded as a negative attempt, leaving the archive
-  consistent. `CheckpointStore` writes atomic per-experiment checkpoints so a halt loses no
-  work and resumes. Plane isolation is unchanged at scale (offline, credential-free). CLI:
-  `run-scaled --compute-tier`.
-- **Goal 12 — Governed model-training** (`model_training`): the strongest loop, fully
-  bounded. A `GovernedModelTrainer` produces model **weights** (a deterministic, offline,
-  pure-Python trainer) only when (a) the capability is enabled at Tier 2, (b) the
-  **stability precondition** is met — the evaluator/audit/gates are green, checked *before*
-  and *independent of* any approval — and (c) a human-approved `MODEL_TRAIN` request is on
-  record. Weights are stored as a `TrainedModelArtifact` with full reproducible lineage
-  (base-model hash, data id + seed, config, code version) and archived (failures too). A
-  trained model is **never** auto-bound to a role: `deploy_model` requires a *separate*
-  `MODEL_DEPLOY` approval **and** cross-model review (reviewer provider ≠ the role's
-  implementation provider), recorded in a `ModelRegistry`. Disabled entirely at Tier ≤ 1.
-  CLI: `train-model`, `deploy-model`.
+- **Goal 10 — Governance gate** — default-deny human-approval workflow over an append-only ledger; approvals bound to the exact change by content hash.
+- **Goal 11 — Governed compute scale-up** — hard compute-budget tiers granted only with promotion-before-budget *and* a bound approval.
+- **Goal 12 — Governed model-training** — bounded offline weight-update behind a stability precondition + `MODEL_TRAIN` approval; deploy needs a separate approval + cross-model review.
 
 ### Cross-tier hardening and production refinements (Goals 13–19)
 
-- **Goal 13 — Documentation consistency contract** (`docs/goal_prompts/goals.json`,
-  `docs_check`, CLI): machine-readable goal manifest and docs consistency/privacy
-  checker so README status, goal prompts, and Self-improvement sections cannot drift
-  silently. CLI: `check-docs`; task: `mise run check-docs`.
-- **Goal 14 — Pricing audit and budget calibration** (`providers/pricing`, `config`,
-  CLI): config-level model price overrides with reviewed dates and source notes, pricing
-  metadata recorded in model-call ledgers, and `pricing-audit` reporting for configured
-  providers, stale/missing prices, budget ceilings, and representative cycle costs.
-- **Goal 15 — Hard resource isolation backend** (`backends`, `sandbox.run_guarded`,
-  `scale`): a sandbox backend abstraction behind the guarded execution path. The portable
-  `local` backend (the developer fallback) now sums the whole process group's RSS and
-  process count, so a forked child cannot dodge the memory/process ceiling; the
-  `linux_guarded` backend lets the Linux cgroup v2 kernel enforce `memory.max` (OOM-kill),
-  `pids.max`, and peak accounting where available. A config `compute` backend policy can
-  require a hard backend above a chosen tier (`hard_backend_above_tier`), with an explicit
-  `allow_local_dev` override. CLI: `sandbox-backends`, `run-scaled --backend`.
-- **Goal 16 — Durable research store and query layer** (`storage`, `schemas`, CLI): a
-  storage interface over every append-only stream (attempts, research/training attempts,
-  model calls, memory, meta-changes, governance, artifacts, deployments). JSONL stays the
-  default transparent backend; an opt-in SQLite backend adds schema migrations, idempotency
-  keys (repeated writes dedupe), hash-chained tamper-evidence for governance/artifact
-  records, and byte-compatible JSONL export/import. `summarize-runs`/`summarize-research`
-  read through either backend. CLI: `storage-migrate`, `storage-import`, `storage-export`,
-  `storage-verify`.
-- **Goal 17 — Research benchmark suite expansion** (`tasks/research/`, `research`): expands
-  the fixed suite to at least 10 tasks each for algorithm, training, and policy work, adds
-  data-cleaning and parser/validator families, tags adversarial variants, keeps hidden data
-  held out of prompts and candidate working directories, and reports richer per-family
-  summary fields including mixed/failed outcomes, hidden/reproducibility failures, and
-  cost per promotion.
-- **Goal 18 — Provider operations and observability** (`providers/ops`, `providers/_http`,
-  CLI): classified provider errors, bounded retry policy with no retries for auth/config or
-  budget failures, provider request metadata on ledger rows, per-provider ops config, failed
-  call records in the single-agent loop, and `provider-report` for spend, latency, retry,
-  error, family-spend, and cost-per-promotion summaries.
-- **Goal 19 — Governance identity and policy hardening** (`governance`, `schemas`, CLI,
-  `config/tier2.governed.yaml`): typed operator identities, local signing proofs over
-  canonical approval payloads, per-action policy templates, two-person approval where
-  required, governance packet export, and identity/policy ledger verification. Existing
-  Goal 10 ledgers remain readable as legacy records; new hardened approvals validate active
-  operators, roles, signatures, requester/approver separation, expiry, and exact content
-  hashes. Human-only CLI verbs manage operators and approvals; the agent tool surface still
-  has no approval, signing, operator-management, or policy-mutation tool.
+- **Goal 13 — Documentation consistency contract** — machine-readable goal manifest + docs/privacy checker (`check-docs`).
+- **Goal 14 — Pricing audit and budget calibration** — dated price overrides, ledger pricing metadata, and `pricing-audit`.
+- **Goal 15 — Hard resource isolation backend** — process-group memory/pid ceilings plus a Linux cgroup v2 `linux_guarded` backend.
+- **Goal 16 — Durable research store and query layer** — opt-in SQLite backend with migrations, dedupe, hash-chained tamper-evidence, and JSONL round-trip.
+- **Goal 17 — Research benchmark suite expansion** — ≥10 tasks/family plus data-cleaning and parser/validator families, adversarial variants, and richer per-family summaries.
+- **Goal 18 — Provider operations and observability** — classified errors, bounded retries, ledger request metadata, and `provider-report`.
+- **Goal 19 — Governance identity and policy hardening** — operator identities, signed approval proofs, policy templates, two-person approval, and packet export/verify.
 
 ### Cross-tier hardening and production refinements (Goal 20)
-- **Goal 20 — Bounded operational pilot and cost-per-promotion report** (`pilot`,
-  `docs/17_operational_pilot_plan.md`, `config/tier1.cheap_frontier.yaml`, CLI): a fixed,
-  budget-capped Tier 0 vs cheap-frontier vs strong-frontier pilot plan with immutable task
-  list, per-arm configs, stop conditions, command transcript generation, and a Markdown
-  report rendered from archived research attempts plus model-call ledgers. The report
-  separates accepted/promoted, mixed/escalated, and failed results; computes estimated spend,
-  cost per accepted promotion, cost per family, hidden/reproducibility/safety rates, common
-  failure signatures; flags budget breaches or missing evidence; and emits a
-  continue/revise/stop recommendation without approving any scale-up.
+
+- **Goal 20 — Bounded operational pilot and cost-per-promotion report** — a fixed, budget-capped Tier 0 vs frontier pilot plus a Markdown report with a continue/revise/stop recommendation.
 
 ### Conversational operations (Goal 21)
-- **Goal 21 — Conversational operating interface in Claude Code** (`.claude/skills/`,
-  `docs/operating_guide.md`, `src/siro/cli.py`): operate the system as a dialogue hosted
-  inside Claude Code through the repo-local skills (intent → plan → confirm → act), rather
-  than a memorized sequence of commands — explicitly **not** a separate REPL or `siro chat`
-  process. Adds only thin, non-interactive CLI affordances: a global `--json` that makes the
-  read-only summaries (`summarize-runs`, `summarize-research`, `provider-report`,
-  `list-approvals`) emit machine-readable output the skills parse, and a global `--dry-run`
-  that prints the exact command, tier, and governance implications and exits **without** any
-  state change, spend, or ledger write. Every governed or irreversible action stays
-  human-confirmed and the plane/governance bounds are unchanged.
+
+- **Goal 21 — Conversational operating interface in Claude Code** — operate via the repo-local skills (no REPL), with global `--json` (machine-readable summaries) and `--dry-run` (preview command/tier/governance, no side effects) affordances.
 
 ## Operating the system
 
-The canonical interface is `uv run siro` (mise tasks are thin wrappers). Rather than a
-flat list of ~35 subcommands, two entry points keep the operating surface small:
+The canonical interface is `uv run siro` (mise tasks are thin wrappers), but rather than
+memorize ~35 subcommands, use one of two entry points:
 
-- **[`docs/operating_guide.md`](docs/operating_guide.md)** — a task-oriented tutorial that
-  walks the whole command surface in a learning flow: mental model → observe → run an
-  experiment → meta-loop → governed scale-up → approvals → pilot → storage → maintenance,
-  with the exact flags for every command.
-- **Repo-local Claude Code skills in [`.claude/skills/`](.claude/skills/)** — drive the
-  system from inside Claude Code with five intuitive verbs instead of memorizing flags:
+- **[`docs/session_tutorial.md`](docs/session_tutorial.md)** — a worked **conversational
+  session**: what it looks like to operate the whole system in dialogue inside Claude Code
+  (observe → run → governed scale-up → pilot → monitor), with the actual turns.
+- **[`docs/operating_guide.md`](docs/operating_guide.md)** — the command reference: a
+  task-oriented tutorial across the whole command surface (observe → run → meta-loop →
+  governed scale-up → approvals → pilot → storage → maintenance), with exact flags.
+- **Repo-local Claude Code skills** ([`.claude/skills/`](.claude/skills/)) — drive the system
+  in dialogue with five verbs: **`/siro`** (control plane + router), **`/siro-run`** (run an
+  experiment at the right tier), **`/siro-watch`** (monitoring snapshot), **`/siro-govern`**
+  (approval workflow), **`/siro-pilot`** (the bounded pilot).
 
-  | Skill | What it does |
-  |---|---|
-  | `/siro` | The control plane: explains the tier/plane/governance model and routes you to the right workflow. |
-  | `/siro-run` | Run an experiment at the right tier with safe defaults (code, training, full org, research, or governed scale-up). |
-  | `/siro-watch` | One monitoring snapshot — archive health, gate/safety/reproducibility failures, spend vs budget, pending governance. |
-  | `/siro-govern` | Walk the human approval workflow (request → review → approve/deny, with identity-signed proofs). |
-  | `/siro-pilot` | Run the bounded operational pilot end-to-end and interpret the recommendation. |
-
-Because the conversation lives in Claude Code, the skills compose `uv run siro` commands
-for you. Two global flags (Goal 21) make that reliable: `--dry-run` previews any command
-(its tier and governance implications) without acting, and `--json` makes the read-only
-summaries machine-readable so the skills read precise state. The fastest first run is fully
-local and free:
+Two global flags (Goal 21) keep the dialogue honest: `--dry-run` previews any command's tier
+and governance implications without acting, and `--json` makes the read-only summaries
+machine-readable. The fastest first run is fully local and free:
 
 ```zsh
 uv run siro --help
@@ -267,10 +142,10 @@ uv run siro run-research tasks/research/training/tiny_mlp --config config/tier0.
 
 ## Suggested use
 
-1. Read `docs/00_principles.md` and `docs/01_system_architecture.md` for the design.
-2. For historical build context, read the implemented goal prompts in order: `01`–`06` for
-   Tier 0, `07`–`09` for Tier 1, `10`–`12` for the Tier 2 governed testbed, and `13`–`18`
-   for the cross-tier hardening contracts.
-3. Operate the system in dialogue with the `.claude/skills/` skills, or follow
-   `docs/operating_guide.md` to exercise it by tier; lowering a run from Tier 2 → 1 → 0 is
-   config-only. Use `--dry-run` to preview any command and `--json` to read state precisely.
+1. Read [`docs/00_principles.md`](docs/00_principles.md) and
+   [`docs/01_system_architecture.md`](docs/01_system_architecture.md) for the design.
+2. Operate the system in dialogue with the `.claude/skills/` skills, or follow
+   [`docs/operating_guide.md`](docs/operating_guide.md); lowering a run from Tier 2 → 1 → 0
+   is config-only.
+3. For build context, read the goal prompts in order and the per-goal notes in
+   [`docs/implementation_status.md`](docs/implementation_status.md).

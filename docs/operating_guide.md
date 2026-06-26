@@ -21,7 +21,9 @@ Two global flags (Goal 21) make the surface conversational — they let the skil
   `uv run siro --json summarize-research`. The default human-readable output is unchanged.
 
 The conversation itself is hosted in Claude Code by the skills — there is no `siro chat`
-REPL; the CLI stays non-interactive and scriptable.
+REPL; the CLI stays non-interactive and scriptable. To see what operating the system *in
+dialogue* actually looks like (rather than this flag-by-flag reference), read the worked
+[`session_tutorial.md`](session_tutorial.md).
 
 ## Mental model (read this first)
 
