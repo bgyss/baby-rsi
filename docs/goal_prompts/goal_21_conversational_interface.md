@@ -1,9 +1,9 @@
-# Goal Prompt 21 - Conversational Operating Interface in Claude Code
+# Goal Prompt 21 - Conversational Operating Interface in Claude Code and Codex
 
 ## Goal
 
 Make operating `siro` a **dialogue rather than a sequence of memorized commands**, with the
-conversation *hosted inside Claude Code* through repo-local skills — **not** a separate
+conversation *hosted inside Claude Code or Codex* through repo-local skills — **not** a separate
 interactive REPL or a `siro chat` process. The user describes intent in plain language
 ("how's the research suite doing?", "try to make `pair_count` faster", "approve that budget
 request"); the agent recognizes the intent, proposes a concrete plan, confirms anything
@@ -12,8 +12,8 @@ prose.
 
 This is an operability goal, not a new capability or a new side-effect surface. The system's
 behavior, loop, gates, and bounds are unchanged; only the *operating surface* becomes
-conversational. It builds directly on the skills under `.claude/skills/` and the walkthrough
-in `../operating_guide.md`.
+conversational. It builds directly on the host-specific skills under `.claude/skills/` and
+`.codex/skills/` and the walkthrough in `../operating_guide.md`. <!-- docs-privacy-allow -->
 
 Depends on Goals 08 (the org and its command surface), 10 and 19 (governance — the
 human-approval bounds the conversation must respect), 13 (the docs consistency contract),
@@ -21,11 +21,12 @@ and 18 (provider/operations observability the monitoring dialogue reads).
 
 ## Requirements
 
-- **Host the conversation in Claude Code, via skills — never a REPL.** Do not add an
+- **Host the conversation in Claude Code or Codex, via skills — never a REPL.** Do not add an
   interactive `siro chat`/`siro repl` command, a prompt loop, or any long-running
-  conversational process to the package. The dialogue is carried by the `.claude/skills/`
-  skills (`siro`, `siro-run`, `siro-watch`, `siro-govern`, `siro-pilot`); the CLI stays a
-  non-interactive, scriptable surface.
+  conversational process to the package. The dialogue is carried by host-specific skills:
+  `.claude/skills/` for Claude Code slash-command workflows and `.codex/skills/` for Codex <!-- docs-privacy-allow -->
+  skills with the same workflow names (`siro`, `siro-run`, `siro-watch`, `siro-govern`,
+  `siro-pilot`). The CLI stays a non-interactive, scriptable surface. <!-- docs-privacy-allow -->
 - **Intent recognition.** The `siro` (router) skill must map a plain-language request to the
   correct workflow skill, and each workflow skill must map intent to the correct
   `uv run siro ...` command(s) and flags. Cover, at minimum: observe/status, run an
@@ -76,7 +77,8 @@ and 18 (provider/operations observability the monitoring dialogue reads).
 
 ## Constraints
 
-- **No separate REPL or chat process.** The conversation is hosted in Claude Code only.
+- **No separate REPL or chat process.** The conversation is hosted in Claude Code or Codex
+  only.
 - **The bounds do not move.** The conversational layer may *propose* anything but may only
   *apply* what passes the gates; budget increases, tier changes, model deploy, egress/
   evaluator changes, and `jj git push` remain human-gated. No skill self-approves a governed

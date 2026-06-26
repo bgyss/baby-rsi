@@ -149,9 +149,9 @@ goal prompts under [`goal_prompts/`](goal_prompts/).
 
 ## Conversational operations (Goal 21)
 
-- **Goal 21 — Conversational operating interface in Claude Code** (`.claude/skills/`,
-  `docs/operating_guide.md`, `src/siro/cli.py`): operate the system as a dialogue hosted
-  inside Claude Code through the repo-local skills (intent → plan → confirm → act), rather
+- **Goal 21 — Conversational operating interface in Claude Code and Codex** (`.claude/skills/`,
+  `.codex/skills/`, `docs/operating_guide.md`, `src/siro/cli.py`): operate the system as a dialogue hosted <!-- docs-privacy-allow -->
+  inside Claude Code or Codex through host-specific repo-local skills (intent → plan → confirm → act), rather
   than a memorized sequence of commands — explicitly **not** a separate REPL or `siro chat`
   process. Adds only thin, non-interactive CLI affordances: a global `--json` that makes the
   read-only summaries (`summarize-runs`, `summarize-research`, `provider-report`,

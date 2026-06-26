@@ -2,10 +2,11 @@
 
 A task-oriented walkthrough of the `siro` command surface, organized as a learning
 flow rather than a flat list. If you just want to *drive* the system from inside Claude
-Code, prefer the repo-local skills in [`.claude/skills/`](../.claude/skills/) — they wrap
-these commands behind five intuitive verbs (`/siro`, `/siro-run`, `/siro-watch`,
-`/siro-govern`, `/siro-pilot`). This guide is the reference those skills lean on, and the
-place to look when you want the exact flags.
+Code or Codex, prefer the repo-local host skills: [`.claude/skills/`](../.claude/skills/)
+for Claude Code slash-command workflows and [`.codex/skills/`](../.codex/skills/) for Codex <!-- docs-privacy-allow -->
+skills with the same workflow names (`siro`, `siro-run`, `siro-watch`, `siro-govern`,
+`siro-pilot`). This guide is the reference those skills lean on, and the place to look when
+you want the exact flags. <!-- docs-privacy-allow -->
 
 The canonical interface is `uv run siro <command>`; the `mise run ...` tasks are thin
 wrappers. Run `uv run siro --help` (or `uv run siro <command> --help`) at any time.
@@ -20,10 +21,20 @@ Two global flags (Goal 21) make the surface conversational — they let the skil
   `provider-report`, `list-approvals`) emit machine-readable output instead of prose:
   `uv run siro --json summarize-research`. The default human-readable output is unchanged.
 
-The conversation itself is hosted in Claude Code by the skills — there is no `siro chat`
-REPL; the CLI stays non-interactive and scriptable. To see what operating the system *in
+The conversation itself is hosted in Claude Code or Codex by the skills — there is no
+`siro chat` REPL; the CLI stays non-interactive and scriptable. To see what operating the system *in
 dialogue* actually looks like (rather than this flag-by-flag reference), read the worked
 [`session_tutorial.md`](session_tutorial.md).
+
+Host invocation differs, but the bounds do not:
+
+- **Claude Code** exposes the workflows as slash commands: `/siro`, `/siro-run`,
+  `/siro-watch`, `/siro-govern`, `/siro-pilot`.
+- **Codex** exposes the same workflows as repo-local skills named `siro`, `siro-run`,
+  `siro-watch`, `siro-govern`, and `siro-pilot`.
+
+Both hosts should use `--json` for precise read-only state, `--dry-run` before mutating or
+governed actions, and explicit user confirmation before spending money or writing archives.
 
 ## Mental model (read this first)
 

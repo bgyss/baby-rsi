@@ -37,8 +37,9 @@ All design docs live under [`docs/`](docs/).
 | `docs/17_operational_pilot_plan.md` | Fixed bounded Tier 0 vs frontier pilot plan and report contract. |
 
 To **operate** the system (rather than read its design), see
-[`docs/operating_guide.md`](docs/operating_guide.md) and the repo-local Claude Code skills
-in [`.claude/skills/`](.claude/skills/). Build instructions are the staged goal prompts in
+[`docs/operating_guide.md`](docs/operating_guide.md) and the repo-local host skills:
+Claude Code in [`.claude/skills/`](.claude/skills/) and Codex in [`.codex/skills/`](.codex/skills/). <!-- docs-privacy-allow -->
+Build instructions are the staged goal prompts in
 [`docs/goal_prompts/`](docs/goal_prompts/) (`01`–`06` Tier 0, `07`–`09` Tier 1, `10`–`12`
 Tier 2 governance, `13`–`21` cross-tier hardening); each carries a `## Self-improvement`
 section binding it to [`docs/13_self_improvement_loop.md`](docs/13_self_improvement_loop.md).
@@ -111,23 +112,32 @@ rises. One line per goal below; **full per-goal detail is in
 
 ### Conversational operations (Goal 21)
 
-- **Goal 21 — Conversational operating interface in Claude Code** — operate via the repo-local skills (no REPL), with global `--json` (machine-readable summaries) and `--dry-run` (preview command/tier/governance, no side effects) affordances.
+- **Goal 21 — Conversational operating interface in Claude Code and Codex** — operate via host-specific repo-local skills (no REPL), with global `--json` (machine-readable summaries) and `--dry-run` (preview command/tier/governance, no side effects) affordances.
 
 ## Operating the system
 
 The canonical interface is `uv run siro` (mise tasks are thin wrappers), but rather than
-memorize ~35 subcommands, use one of two entry points:
+memorize the full subcommand set, use one of two entry points:
 
 - **[`docs/session_tutorial.md`](docs/session_tutorial.md)** — a worked **conversational
   session**: what it looks like to operate the whole system in dialogue inside Claude Code
-  (observe → run → governed scale-up → pilot → monitor), with the actual turns.
+  or Codex (observe → run → governed scale-up → pilot → monitor), with the actual turns.
 - **[`docs/operating_guide.md`](docs/operating_guide.md)** — the command reference: a
   task-oriented tutorial across the whole command surface (observe → run → meta-loop →
   governed scale-up → approvals → pilot → storage → maintenance), with exact flags.
-- **Repo-local Claude Code skills** ([`.claude/skills/`](.claude/skills/)) — drive the system
-  in dialogue with five verbs: **`/siro`** (control plane + router), **`/siro-run`** (run an
-  experiment at the right tier), **`/siro-watch`** (monitoring snapshot), **`/siro-govern`**
-  (approval workflow), **`/siro-pilot`** (the bounded pilot).
+- **Repo-local host skills** — Claude Code uses [`.claude/skills/`](.claude/skills/) slash
+  commands; Codex uses [`.codex/skills/`](.codex/skills/) skills with the same workflow names. <!-- docs-privacy-allow -->
+  The five verbs are **`siro`** (control plane + router), **`siro-run`** (run an experiment at
+  the right tier), **`siro-watch`** (monitoring snapshot), **`siro-govern`** (approval
+  workflow), **`siro-pilot`** (the bounded pilot). <!-- docs-privacy-allow -->
+
+Host split:
+
+- **Claude Code**: invoke the workflows as slash commands (`/siro`, `/siro-run`,
+  `/siro-watch`, `/siro-govern`, `/siro-pilot`).
+- **Codex**: invoke the repo-local skills by name (`siro`, `siro-run`, `siro-watch`,
+  `siro-govern`, `siro-pilot`). The Codex skills mirror the Claude Code workflows but use
+  Codex operating conventions instead of slash-command assumptions.
 
 Two global flags (Goal 21) keep the dialogue honest: `--dry-run` previews any command's tier
 and governance implications without acting, and `--json` makes the read-only summaries
@@ -144,7 +154,7 @@ uv run siro run-research tasks/research/training/tiny_mlp --config config/tier0.
 
 1. Read [`docs/00_principles.md`](docs/00_principles.md) and
    [`docs/01_system_architecture.md`](docs/01_system_architecture.md) for the design.
-2. Operate the system in dialogue with the `.claude/skills/` skills, or follow
+2. Operate the system in dialogue with the repo-local Claude Code or Codex skills, or follow
    [`docs/operating_guide.md`](docs/operating_guide.md); lowering a run from Tier 2 → 1 → 0
    is config-only.
 3. For build context, read the goal prompts in order and the per-goal notes in
