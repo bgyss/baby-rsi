@@ -29,6 +29,14 @@ run = "uv run pytest"
 description = "Static checks"
 run = "uv run ruff check ."
 
+[tasks.check-docs]
+description = "Check README, goal manifest, goal prompts, and docs privacy"
+run = "uv run siro check-docs"
+
+[tasks.pricing-audit]
+description = "Audit configured model prices, review freshness, and budget ceilings"
+run = "uv run siro pricing-audit --config config/tier1.frontier.yaml --strict"
+
 [tasks.fmt]
 description = "Format code"
 run = "uv run ruff format ."

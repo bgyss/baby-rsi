@@ -1,0 +1,8 @@
+{
+  "family": "algorithm",
+  "objective": "Count overlapping closed interval pairs.",
+  "edit_surface": "solution.py",
+  "primary_metric": "accuracy",
+  "higher_is_better": true,
+  "budget_seconds": 5.0
+}

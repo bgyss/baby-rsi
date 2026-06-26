@@ -6,6 +6,21 @@ scale. The numbers are planning estimates, not purchase advice or billing truth.
 Prices change. The figures below were checked against public provider pages on
 2026-06-25 and should be refreshed before any budget decision.
 
+Before any frontier pilot or governed scale-up decision, run the config-backed pricing
+audit in strict mode and refresh stale config entries first:
+
+```zsh
+uv run siro pricing-audit --config config/tier1.frontier.yaml --strict
+```
+
+The audit uses the price metadata in `config/tier1.frontier.yaml` or
+`config/tier2.governed.yaml`; it does not fetch provider pricing at runtime. A pricing
+refresh is a human-operated docs/config update: update `prices.input_per_mtok`,
+`prices.output_per_mtok`, optional `prices.cached_input_per_mtok`,
+`prices.last_reviewed`, and `prices.source_url` or `prices.source_note`, then rerun the
+audit and docs checks. Scale decisions require a non-stale pricing review, and budget
+ceiling changes remain governance-gated.
+
 ## Sources checked
 
 - OpenAI API pricing: https://openai.com/api/pricing/
@@ -53,8 +68,8 @@ Representative public token prices checked on 2026-06-25:
 | OpenAI GPT-5.4 | $2.50 | $15.00 |
 | OpenAI GPT-5.4 mini | $0.75 | $4.50 |
 
-The code's internal default pricing table is only an estimate. Before any pilot, either
-refresh that table or set explicit model price overrides in config.
+The code's internal default pricing table is only an estimate. Before any pilot, set
+explicit model price overrides in config and confirm `pricing-audit --strict` passes.
 
 ## Per-cycle API cost estimates
 
@@ -240,6 +255,8 @@ Required refinements:
 Add these controls before frontier or scale-up pilots:
 
 - Config-level model price overrides with reviewed dates.
+- `uv run siro pricing-audit --config config/tier1.frontier.yaml --strict` before each
+  frontier pilot or scale-up decision.
 - Per-role token ceilings.
 - Per-cycle total token ceilings.
 - Per-task-family budget pools.

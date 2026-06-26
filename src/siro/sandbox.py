@@ -13,7 +13,6 @@ the tests, so it cannot weaken or delete them.
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -24,6 +23,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from xml.etree import ElementTree
 
+from .backends import GuardBackend, ResourceLimits, get_backend
 from .safety import assert_execution_plane_isolated, scrub_execution_env
 
 #: Written into the sandbox temp dir and loaded at interpreter startup (it sits on
@@ -45,11 +45,17 @@ _socket.socket.connect_ex = _blocked
 
 @dataclass(frozen=True)
 class SandboxConfig:
-    """Execution-plane limits. ``network`` is always disabled in the execution plane."""
+    """Execution-plane limits. ``network`` is always disabled in the execution plane.
+
+    ``backend`` selects the resource-isolation backend for guarded runs (Goal 15):
+    ``"local"`` is the portable developer fallback; ``"linux_guarded"`` is hard, OS-enforced
+    cgroup isolation. The backend is a control-plane choice — a candidate never selects it.
+    """
 
     timeout_seconds: float = 10.0
     network: str = "disabled"
     max_output_bytes: int = 1_000_000
+    backend: str = "local"
 
 
 @dataclass(frozen=True)
@@ -127,18 +133,21 @@ class ResearchRun:
 class GuardedRun:
     """Output of one *resource-guarded* sandboxed evaluation (Goal 11).
 
-    Like :class:`ResearchRun`, but executed under an explicit compute budget — a hard
-    wall-clock deadline *and* a memory ceiling enforced by a controller-side monitor that
-    kills the process group on breach. ``timed_out`` / ``memory_exceeded`` mark a ceiling
-    breach (which the caller turns into a halt-and-escalate); ``peak_memory_mb`` is the
-    observed peak for audit.
+    Like :class:`ResearchRun`, but executed under an explicit compute budget through a
+    resource-isolation backend (Goal 15): a hard wall-clock deadline, a memory ceiling, and a
+    process-count ceiling. ``timed_out`` / ``memory_exceeded`` / ``process_exceeded`` mark
+    which ceiling was breached (which the caller turns into a halt-and-escalate);
+    ``peak_memory_mb`` is the observed peak and ``backend`` records which backend enforced the
+    limits — both for audit.
     """
 
     metrics: dict = field(default_factory=dict)
     runtime_ms: float = 0.0
     timed_out: bool = False
     memory_exceeded: bool = False
+    process_exceeded: bool = False
     peak_memory_mb: float = 0.0
+    backend: str = "local"
     error: str = ""
 
     @property
@@ -146,104 +155,11 @@ class GuardedRun:
         return (
             not self.timed_out
             and not self.memory_exceeded
+            and not self.process_exceeded
             and not self.error
             and "primary" in self.metrics
             and "error" not in self.metrics
         )
-
-
-def _rss_mb(pid: int) -> float | None:
-    """Resident set size of ``pid`` in MB via ``ps`` (portable across macOS/Linux), or None.
-
-    ``ps -o rss=`` reports KB on both platforms. Used by the memory monitor so the ceiling
-    is enforced even where ``setrlimit(RLIMIT_AS)`` is a no-op (macOS).
-    """
-    try:
-        out = subprocess.run(
-            ["ps", "-o", "rss=", "-p", str(pid)], capture_output=True, text=True, timeout=2
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    raw = out.stdout.strip()
-    if not raw:
-        return None
-    try:
-        return int(raw.split()[0]) / 1024.0
-    except (ValueError, IndexError):
-        return None
-
-
-def _kill_process_group(proc: "subprocess.Popen") -> None:
-    """Hard-kill a child and its process group (started with ``start_new_session=True``)."""
-    try:
-        os.killpg(os.getpgid(proc.pid), 9)
-    except (ProcessLookupError, PermissionError, OSError):
-        try:
-            proc.kill()
-        except OSError:
-            pass
-
-
-@dataclass
-class _GuardedExec:
-    returncode: int
-    stdout: str
-    stderr: str
-    timed_out: bool
-    memory_exceeded: bool
-    peak_memory_mb: float
-
-
-def _run_guarded_subprocess(
-    cmd: list[str],
-    *,
-    cwd: Path,
-    env: dict,
-    wall_clock_seconds: float,
-    memory_mb: int | None,
-    poll_interval: float = 0.05,
-) -> _GuardedExec:
-    """Run ``cmd`` under a hard wall-clock deadline and an optional memory ceiling.
-
-    The child runs in its own session/process group so a breach kills the whole group, not
-    just the leader. The wall-clock deadline is always enforced; the memory ceiling is
-    enforced by polling the child's RSS (``ps``) and killing on breach.
-    """
-    deadline = time.perf_counter() + wall_clock_seconds
-    # start_new_session=True ⇒ the child leads a new process group we can kill wholesale.
-    proc = subprocess.Popen(  # noqa: S603 - fixed controller-built command
-        cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-        start_new_session=True,
-    )
-    peak_mb = 0.0
-    timed_out = False
-    memory_exceeded = False
-    while True:
-        if proc.poll() is not None:
-            break
-        now = time.perf_counter()
-        if now >= deadline:
-            timed_out = True
-            break
-        if memory_mb is not None:
-            rss = _rss_mb(proc.pid)
-            if rss is not None:
-                peak_mb = max(peak_mb, rss)
-                if rss > memory_mb:
-                    memory_exceeded = True
-                    break
-        time.sleep(poll_interval)
-
-    if timed_out or memory_exceeded:
-        _kill_process_group(proc)
-        try:
-            out, err = proc.communicate(timeout=5)
-        except subprocess.TimeoutExpired:
-            out, err = "", ""
-        return _GuardedExec(-1, out or "", err or "", timed_out, memory_exceeded, peak_mb)
-
-    out, err = proc.communicate()
-    return _GuardedExec(proc.returncode, out or "", err or "", False, False, peak_mb)
 
 
 def _truncate(text: str, limit: int) -> str:
@@ -285,8 +201,16 @@ def _parse_junit(report_path: Path) -> tuple[int, int] | None:
 class Sandbox:
     """Isolated runner for candidate code: temp dir, scrubbed env, hard timeout, no net."""
 
-    def __init__(self, config: SandboxConfig | None = None) -> None:
+    def __init__(
+        self, config: SandboxConfig | None = None, *, backend: GuardBackend | str | None = None
+    ) -> None:
         self.config = config or SandboxConfig()
+        if backend is None:
+            self.backend: GuardBackend = get_backend(self.config.backend)
+        elif isinstance(backend, str):
+            self.backend = get_backend(backend)
+        else:
+            self.backend = backend
 
     def child_env(self) -> dict[str, str]:
         """Environment for a candidate subprocess: credentials scrubbed."""
@@ -541,16 +465,22 @@ class Sandbox:
         *,
         wall_clock_seconds: float,
         memory_mb: int | None = None,
+        max_processes: int | None = None,
         hidden_payload: str | None = None,
+        backend: GuardBackend | None = None,
     ) -> GuardedRun:
-        """Run a research ``eval.py`` under an explicit compute budget (Goal 11).
+        """Run a research ``eval.py`` under an explicit compute budget (Goal 11 / Goal 15).
 
         Same execution-plane contract as :meth:`run_research` — offline, credential-scrubbed
         env, network-blocking ``sitecustomize``, held-out data outside the candidate cwd via
-        ``SIRO_HIDDEN_PATH`` — but the run is bounded by a hard ``wall_clock_seconds`` deadline
-        and an optional ``memory_mb`` ceiling enforced by a controller-side monitor that kills
-        the process group on breach. Larger compute never relaxes plane isolation.
+        ``SIRO_HIDDEN_PATH`` — but the run is bounded by hard ceilings (a ``wall_clock_seconds``
+        deadline, an optional ``memory_mb`` ceiling, and an optional ``max_processes`` ceiling)
+        enforced by a resource-isolation ``backend`` (Goal 15). The portable ``local`` backend
+        samples the whole process group; the ``linux_guarded`` backend lets the kernel enforce
+        the limits via cgroups. The backend is a control-plane choice, never the candidate's,
+        and larger compute never relaxes plane isolation.
         """
+        active = backend or self.backend
         script = Path(eval_path)
         env = self.child_env()
         assert_execution_plane_isolated(env)
@@ -574,35 +504,46 @@ class Sandbox:
                 env["SIRO_HIDDEN_PATH"] = str(hidden_path)
 
             cmd = [sys.executable, str(run_script)]
-            start = time.perf_counter()
-            result = _run_guarded_subprocess(
-                cmd,
-                cwd=tmpdir,
-                env=env,
+            limits = ResourceLimits(
                 wall_clock_seconds=wall_clock_seconds,
                 memory_mb=memory_mb,
+                max_processes=max_processes,
             )
+            start = time.perf_counter()
+            result = active.run(cmd, cwd=tmpdir, env=env, limits=limits)
             runtime_ms = (time.perf_counter() - start) * 1000.0
+            peak = result.peak_memory_mb
 
             if result.timed_out:
                 return GuardedRun(
                     runtime_ms=runtime_ms,
                     timed_out=True,
-                    peak_memory_mb=result.peak_memory_mb,
+                    peak_memory_mb=peak,
+                    backend=result.backend,
                     error=f"evaluation exceeded the {wall_clock_seconds:g}s wall-clock ceiling",
                 )
             if result.memory_exceeded:
                 return GuardedRun(
                     runtime_ms=runtime_ms,
                     memory_exceeded=True,
-                    peak_memory_mb=result.peak_memory_mb,
+                    peak_memory_mb=peak,
+                    backend=result.backend,
                     error=f"evaluation exceeded the {memory_mb}MB memory ceiling "
-                    f"(peak {result.peak_memory_mb:.0f}MB)",
+                    f"(peak {peak:.0f}MB)",
+                )
+            if result.process_exceeded:
+                return GuardedRun(
+                    runtime_ms=runtime_ms,
+                    process_exceeded=True,
+                    peak_memory_mb=peak,
+                    backend=result.backend,
+                    error=f"evaluation exceeded the {max_processes}-process ceiling",
                 )
             if result.returncode != 0:
                 return GuardedRun(
                     runtime_ms=runtime_ms,
-                    peak_memory_mb=result.peak_memory_mb,
+                    peak_memory_mb=peak,
+                    backend=result.backend,
                     error=_truncate(result.stderr or "eval.py failed", self.config.max_output_bytes),
                 )
             line = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
@@ -611,24 +552,30 @@ class Sandbox:
             except (json.JSONDecodeError, IndexError):
                 return GuardedRun(
                     runtime_ms=runtime_ms,
-                    peak_memory_mb=result.peak_memory_mb,
+                    peak_memory_mb=peak,
+                    backend=result.backend,
                     error="eval.py produced no parseable metric record",
                 )
             if not isinstance(metrics, dict):
                 return GuardedRun(
                     runtime_ms=runtime_ms,
-                    peak_memory_mb=result.peak_memory_mb,
+                    peak_memory_mb=peak,
+                    backend=result.backend,
                     error="eval.py metric record was not a JSON object",
                 )
             if "error" in metrics:
                 return GuardedRun(
                     runtime_ms=runtime_ms,
                     metrics=metrics,
-                    peak_memory_mb=result.peak_memory_mb,
+                    peak_memory_mb=peak,
+                    backend=result.backend,
                     error=str(metrics["error"]),
                 )
             return GuardedRun(
-                metrics=metrics, runtime_ms=runtime_ms, peak_memory_mb=result.peak_memory_mb
+                metrics=metrics,
+                runtime_ms=runtime_ms,
+                peak_memory_mb=peak,
+                backend=result.backend,
             )
 
 

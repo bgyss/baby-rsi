@@ -145,3 +145,24 @@ safety:
 ```
 
 For `tier1.frontier.yaml`, keep the `sandbox` and `safety.allow_evaluator_edits`/`allow_package_install` blocks identical, set `tier: 1`, add the `providers` (anthropic/openai), `agent_models` per-role bindings, `budget` (token/USD ceilings), and `network.egress: allowlist` blocks from `07_model_providers_and_tiers.md`. The execution-plane `sandbox.network` stays `disabled` at every tier.
+
+## Durable storage: migration, export, backup (Goal 16)
+
+JSONL under `runs/` is the **default, transparent** audit format and the source of truth for Tier 0 local work — nothing about it changes. The `siro.storage` layer adds a uniform interface over every append-only stream (`attempts`, `research_attempts`, `training_attempts`, `model_calls`, `memory`, `meta_changes`, `governance`, `artifacts`, `deployments`) with two backends, selected by an optional `storage` config block:
+
+```yaml
+storage:
+  backend: jsonl        # jsonl (default) | sqlite
+  path: runs/siro.db    # SQLite database path when backend=sqlite
+```
+
+The SQLite backend keeps one append-only `events` table with schema migrations (`schema_migrations`), an idempotency key per record (`UNIQUE(stream, idempotency_key)` — a repeated write with the same key is a no-op), and per-stream hash chaining for `governance` and `artifacts` (each row links to the previous via a SHA-256 chain, so post-hoc edits are detectable).
+
+Operational workflow (all `uv run siro`):
+
+- **Migrate** — create or upgrade the schema: `storage-migrate --store runs/siro.db`. Safe to run repeatedly; it applies only pending migrations (empty DB → latest, or an older schema version → latest, preserving existing rows).
+- **Import** — load the existing JSONL archives into SQLite (idempotent): `storage-import --store runs/siro.db`. Re-running imports only new records.
+- **Export / backup** — write SQLite back to JSONL files byte-compatible with the existing readers: `storage-export --store runs/siro.db --to-dir runs/export`. This is the backup/restore path: the exported `*.jsonl` files load unchanged through `JSONLArchive`/`summarize-*`. For a raw backup, copy the SQLite file (WAL mode) or keep the JSONL export under version control.
+- **Verify** — check tamper-evident hash chains: `storage-verify --store runs/siro.db` (all chained streams) or `--stream governance`.
+
+Summaries read through the interface: `summarize-runs --store runs/siro.db` and `summarize-research --store runs/siro.db` query SQLite, while the default (no `--store`) reads JSONL exactly as before. The SQLite store is **never** a hidden dependency for Tier 0 — it is opt-in — and migrations and tamper-evidence policy are human-gated, never agent-editable.

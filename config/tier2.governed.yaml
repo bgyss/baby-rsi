@@ -14,16 +14,49 @@ providers:
     base_url: http://127.0.0.1:2276/v1
     name: unsloth/Qwen3.6-27B-GGUF:Q8_0
     timeout_seconds: 120
+    ops:
+      concurrency_limit: 1
+      requests_per_minute: 60
+      retry:
+        max_attempts: 1
   anthropic:
     backend: anthropic
     name: claude-opus-4-8
     api_key_env: ANTHROPIC_API_KEY
     timeout_seconds: 120
+    prices:
+      input_per_mtok: 5.0
+      output_per_mtok: 25.0
+      cached_input_per_mtok: null
+      last_reviewed: "2026-06-25"
+      source_note: "Repo-maintained pricing estimate; refresh from provider docs before scale decisions."
+    ops:
+      concurrency_limit: 2
+      requests_per_minute: 30
+      retry:
+        max_attempts: 3
+        initial_backoff_seconds: 0.25
+        max_backoff_seconds: 2.0
+        jitter_seconds: 0.05
   openai:
     backend: openai
     name: gpt-5.4
     api_key_env: OPENAI_API_KEY
     timeout_seconds: 120
+    prices:
+      input_per_mtok: 2.5
+      output_per_mtok: 15.0
+      cached_input_per_mtok: null
+      last_reviewed: "2026-06-25"
+      source_note: "Repo-maintained pricing estimate; refresh from provider docs before scale decisions."
+    ops:
+      concurrency_limit: 2
+      requests_per_minute: 30
+      retry:
+        max_attempts: 3
+        initial_backoff_seconds: 0.25
+        max_backoff_seconds: 2.0
+        jitter_seconds: 0.05
 
 agent_models:
   hypothesis: anthropic
@@ -40,6 +73,40 @@ sandbox:
   network: disabled                          # execution plane is always offline, at every tier
   max_attempts_per_task: 20
 
+# Governed compute scale-up (Goal 11) + hard resource isolation (Goal 15). Each compute tier
+# is a hard wall-clock + memory + process-count ceiling; tier 0 is free, higher tiers are
+# governed (promotion-before-budget + a human approval). `backend` is the default isolation
+# backend and `hard_backend_above_tier` forces a hard, OS-enforced backend (`linux_guarded`)
+# above that tier — the portable `local` monitor is a developer fallback and only stands in
+# above the threshold when `allow_local_dev` is set. A candidate never selects the backend.
+compute:
+  backend: local                             # default isolation backend (local | linux_guarded)
+  hard_backend_above_tier: 0                  # tiers > 0 require hard, OS-enforced isolation
+  allow_local_dev: false                      # set true only for local development on a portable host
+  tiers:
+    0:
+      wall_clock_seconds: 15
+      memory_mb: 512
+      max_processes: 16
+    1:
+      wall_clock_seconds: 60
+      memory_mb: 1024
+      max_processes: 32
+    2:
+      wall_clock_seconds: 300
+      memory_mb: 2048
+      max_processes: 64
+
+# Durable research store (Goal 16). JSONL stays the default, transparent audit/export format;
+# `backend: sqlite` opts into a queryable SQLite store with schema migrations, idempotent
+# writes, and hash-chained tamper-evidence for governance/artifact records. Lowering back to
+# `jsonl` (or omitting this block) is config-only and always safe; the SQLite store is never a
+# hidden dependency for Tier 0 local tests. Changing audit retention or tamper-evidence policy
+# is human-gated.
+storage:
+  backend: jsonl                             # jsonl (default) | sqlite
+  path: runs/siro.db                         # SQLite database path when backend=sqlite
+
 evaluation:
   primary_metric: pytest_pass_rate
   require_reproducibility: true
@@ -55,6 +122,60 @@ budget:
 governance:
   enabled: true
   approvals_path: runs/approvals.jsonl
+  operators:
+    - operator_id: alice
+      display_name: Alice Reviewer
+      role: approver
+      auth_method: local-dev
+      auth_metadata:
+        proof: hmac-sha256
+      status: active
+    - operator_id: bob
+      display_name: Bob Reviewer
+      role: approver
+      auth_method: local-dev
+      auth_metadata:
+        proof: hmac-sha256
+      status: active
+    - operator_id: casey
+      display_name: Casey Requester
+      role: requester
+      auth_method: local-dev
+      status: active
+  policies:
+    - policy_id: budget-increase
+      action: budget_increase
+      risk: medium
+      required_reviewers: 1
+      required_role: approver
+      separation_of_duties: true
+      max_scope: once
+      max_expiry_seconds: 86400
+      require_signature: true
+      required_rationale_fields: ["rationale"]
+      required_evidence: ["safety"]
+    - policy_id: high-risk-two-person
+      action: high_risk_action
+      risk: high
+      required_reviewers: 2
+      required_role: approver
+      separation_of_duties: true
+      max_scope: once
+      max_expiry_seconds: 86400
+      require_signature: true
+      required_rationale_fields: ["rationale"]
+      required_evidence: ["safety", "rollback"]
+    - policy_id: model-deploy-two-person
+      action: model_deploy
+      risk: high
+      required_reviewers: 2
+      required_role: approver
+      separation_of_duties: true
+      max_scope: once
+      max_expiry_seconds: 86400
+      require_signature: true
+      required_rationale_fields: ["rationale"]
+      required_evidence: ["safety", "rollback"]
 
 safety:
   allow_network: true                        # control-plane egress (allowlisted only)

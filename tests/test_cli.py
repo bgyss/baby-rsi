@@ -28,7 +28,67 @@ def test_subcommands_registered():
     parser = build_parser()
     # argparse stores the subparser choices; all three must be present.
     choices = parser._subparsers._group_actions[0].choices  # type: ignore[attr-defined]
-    assert {"run-task", "run-org", "summarize-runs", "propose-meta-change"} <= set(choices)
+    assert {
+        "run-task",
+        "run-org",
+        "summarize-runs",
+        "propose-meta-change",
+        "check-docs",
+        "pricing-audit",
+        "provider-report",
+        "run-scaled",
+        "sandbox-backends",
+        "storage-migrate",
+        "storage-import",
+        "storage-export",
+        "storage-verify",
+    } <= set(choices)
+
+
+def test_sandbox_backends_lists_local_and_hard(capsys):
+    assert main(["sandbox-backends"]) == 0
+    out = capsys.readouterr().out
+    assert "local: available" in out
+    assert "linux_guarded" in out
+
+
+def test_storage_migrate_import_export_verify_roundtrip(tmp_path, capsys):
+    from siro.archive import JSONLArchive
+    from siro.schemas import Attempt, AttemptStatus, Candidate
+
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    archive = JSONLArchive(runs / "attempts.jsonl")
+    for i in range(3):
+        archive.append(
+            Attempt(
+                attempt_id=f"a{i}",
+                task_id="t",
+                candidate=Candidate(candidate_id=f"c{i}", task_id="t", code="x = 1"),
+                status=AttemptStatus.REJECTED,
+                reason="1 test(s) failing",
+            )
+        )
+    db = tmp_path / "siro.db"
+
+    assert main(["storage-migrate", "--store", str(db)]) == 0
+    assert "schema 0 -> 2" in capsys.readouterr().out
+
+    assert main(["storage-import", "--store", str(db), "--from-dir", str(runs)]) == 0
+    assert "attempts: 3 new" in capsys.readouterr().out
+
+    # summarize-runs works against the SQLite store, not just JSONL.
+    assert main(["summarize-runs", "--store", str(db)]) == 0
+    assert "Attempts: 3" in capsys.readouterr().out
+
+    out_dir = tmp_path / "export"
+    assert main(["storage-export", "--store", str(db), "--to-dir", str(out_dir)]) == 0
+    capsys.readouterr()
+    exported = (out_dir / "attempts.jsonl").read_text().splitlines()
+    assert sorted(exported) == sorted((runs / "attempts.jsonl").read_text().splitlines())
+
+    # Hash-chain verification passes on an untampered store.
+    assert main(["storage-verify", "--store", str(db)]) == 0
 
 
 def test_summarize_runs_reads_archive(tmp_path, capsys):
@@ -96,9 +156,7 @@ def test_propose_meta_change_records_proposal(tmp_path, capsys):
     assert store_path.exists()
 
 
-def test_tier2_model_training_smoke_path_uses_separate_train_and_deploy_approvals(
-    tmp_path, capsys
-):
+def test_tier2_model_training_smoke_path_uses_separate_train_and_deploy_approvals(tmp_path, capsys):
     """Cheap end-to-end Tier 2 smoke through the public CLI entrypoints."""
 
     approvals = tmp_path / "approvals.jsonl"
@@ -121,87 +179,228 @@ governance:
         "train_config": {"learning_rate": 0.1, "epochs": 300},
         "compute_tier": 0,
     }
-    assert main([
-        "request-approval",
-        "model_train",
-        "--target",
-        f"train:{experiment_id}",
-        "--payload",
-        json.dumps(train_payload),
-        "--ledger",
-        str(approvals),
-    ]) == 0
+    assert (
+        main(
+            [
+                "request-approval",
+                "model_train",
+                "--target",
+                f"train:{experiment_id}",
+                "--payload",
+                json.dumps(train_payload),
+                "--ledger",
+                str(approvals),
+            ]
+        )
+        == 0
+    )
     train_request = re.search(r"request ([0-9a-f]{12})", capsys.readouterr().out).group(1)
 
     assert main(["approve", train_request, "--by", "alice", "--ledger", str(approvals)]) == 0
     capsys.readouterr()
 
-    assert main([
-        "train-model",
-        experiment_id,
-        "--config",
-        str(config),
-        "--archive",
-        str(archive),
-        "--store",
-        str(store),
-    ]) == 0
+    assert (
+        main(
+            [
+                "train-model",
+                experiment_id,
+                "--config",
+                str(config),
+                "--archive",
+                str(archive),
+                "--store",
+                str(store),
+            ]
+        )
+        == 0
+    )
     train_out = capsys.readouterr().out
     artifact_id = re.search(r"trained artifact ([0-9a-f]{12})", train_out).group(1)
     assert "NOT deployed" in train_out
     assert ModelRegistry(registry_path).is_deployed(artifact_id, "implementation") is False
 
-    assert main([
-        "deploy-model",
-        artifact_id,
-        "implementation",
-        "--implementation-provider",
-        "anthropic",
-        "--reviewer-provider",
-        "openai",
-        "--config",
-        str(config),
-        "--store",
-        str(store),
-        "--registry",
-        str(registry_path),
-    ]) == 2
+    assert (
+        main(
+            [
+                "deploy-model",
+                artifact_id,
+                "implementation",
+                "--implementation-provider",
+                "anthropic",
+                "--reviewer-provider",
+                "openai",
+                "--config",
+                str(config),
+                "--store",
+                str(store),
+                "--registry",
+                str(registry_path),
+            ]
+        )
+        == 2
+    )
     deploy_denied = capsys.readouterr().out
     assert "needs human approval" in deploy_denied
     assert ModelRegistry(registry_path).is_deployed(artifact_id, "implementation") is False
 
     deploy_payload = {"artifact_id": artifact_id, "role": "implementation"}
-    assert main([
-        "request-approval",
-        "model_deploy",
-        "--target",
-        "deploy:implementation",
-        "--payload",
-        json.dumps(deploy_payload),
-        "--ledger",
-        str(approvals),
-    ]) == 0
+    assert (
+        main(
+            [
+                "request-approval",
+                "model_deploy",
+                "--target",
+                "deploy:implementation",
+                "--payload",
+                json.dumps(deploy_payload),
+                "--ledger",
+                str(approvals),
+            ]
+        )
+        == 0
+    )
     deploy_request = re.search(r"request ([0-9a-f]{12})", capsys.readouterr().out).group(1)
 
     assert main(["approve", deploy_request, "--by", "alice", "--ledger", str(approvals)]) == 0
     capsys.readouterr()
 
-    assert main([
-        "deploy-model",
-        artifact_id,
-        "implementation",
-        "--implementation-provider",
-        "anthropic",
-        "--reviewer-provider",
-        "openai",
-        "--config",
-        str(config),
-        "--store",
-        str(store),
-        "--registry",
-        str(registry_path),
-    ]) == 0
+    assert (
+        main(
+            [
+                "deploy-model",
+                artifact_id,
+                "implementation",
+                "--implementation-provider",
+                "anthropic",
+                "--reviewer-provider",
+                "openai",
+                "--config",
+                str(config),
+                "--store",
+                str(store),
+                "--registry",
+                str(registry_path),
+            ]
+        )
+        == 0
+    )
     deploy_out = capsys.readouterr().out
     assert "DEPLOYED" in deploy_out
     assert "reviewer openai" in deploy_out
     assert ModelRegistry(registry_path).is_deployed(artifact_id, "implementation") is True
+
+
+def test_governance_identity_policy_cli_packet_and_verify(tmp_path, capsys):
+    approvals = tmp_path / "approvals.jsonl"
+    operators = tmp_path / "operators.jsonl"
+    config = tmp_path / "tier2.governed.yaml"
+    config.write_text(
+        f"""
+tier: 2
+governance:
+  enabled: true
+  approvals_path: {approvals}
+  operators:
+    - operator_id: alice
+      display_name: Alice Reviewer
+      role: approver
+      auth_method: local
+      status: active
+  policies:
+    - policy_id: budget
+      action: budget_increase
+      required_reviewers: 1
+      required_role: approver
+      separation_of_duties: true
+      max_scope: once
+      require_signature: true
+      required_evidence: ["safety"]
+""",
+        encoding="utf-8",
+    )
+
+    assert (
+        main(
+            [
+                "create-operator",
+                "alice",
+                "--display-name",
+                "Alice Reviewer",
+                "--role",
+                "approver",
+                "--operators",
+                str(operators),
+            ]
+        )
+        == 0
+    )
+    assert main(["list-operators", "--operators", str(operators)]) == 0
+    assert "Alice Reviewer" in capsys.readouterr().out
+
+    assert (
+        main(
+            [
+                "request-approval",
+                "budget_increase",
+                "--target",
+                "max_usd_per_run",
+                "--actor",
+                "casey",
+                "--rationale",
+                "needs a larger replay",
+                "--payload",
+                '{"max_usd_per_run": 20}',
+                "--risk",
+                "high",
+                "--evidence",
+                "safety",
+                "--rollback-plan",
+                "restore prior budget",
+                "--ledger",
+                str(approvals),
+            ]
+        )
+        == 0
+    )
+    request_id = re.search(r"request ([0-9a-f]{12})", capsys.readouterr().out).group(1)
+
+    assert (
+        main(
+            [
+                "approve",
+                request_id,
+                "--by",
+                "alice",
+                "--signing-key",
+                "secret",
+                "--config",
+                str(config),
+                "--ledger",
+                str(approvals),
+            ]
+        )
+        == 0
+    )
+    assert "APPROVED" in capsys.readouterr().out
+
+    assert main(["verify-governance", "--config", str(config), "--ledger", str(approvals)]) == 0
+    assert "verification OK" in capsys.readouterr().out
+
+    assert (
+        main(
+            [
+                "export-governance-packet",
+                request_id,
+                "--config",
+                str(config),
+                "--ledger",
+                str(approvals),
+            ]
+        )
+        == 0
+    )
+    packet = json.loads(capsys.readouterr().out)
+    assert packet["exact_payload"]["payload"] == {"max_usd_per_run": 20}
+    assert packet["risk_classification"] == "high"
+    assert packet["approval_history"][0]["operator_id"] == "alice"
+    assert packet["rollback_plan"] == "restore prior budget"

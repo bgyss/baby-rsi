@@ -34,8 +34,9 @@ All design docs live under [`docs/`](docs/).
 | `docs/14_project_retrospective.md` | Retrospective on the implemented system and refinement backlog. |
 | `docs/15_scale_cost_model.md` | Source-backed deployment cost model and scale bands. |
 | `docs/16_low_cost_validation_plan.md` | Cheap local-to-frontier validation ladder. |
+| `docs/17_operational_pilot_plan.md` | Fixed bounded Tier 0 vs frontier pilot plan and report contract. |
 
-Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`12` are implemented. Goals `13`–`20` are post-Tier-2 refinement specs: docs consistency (`13`), pricing audit (`14`), hard resource isolation (`15`), durable storage (`16`), benchmark expansion (`17`), provider operations (`18`), governance identity (`19`), and the bounded operational pilot (`20`). Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
+Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`20` are implemented. Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
 
 ## Capability tiers
 
@@ -61,9 +62,15 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goals 01–12 are implemented, including the Tier 2 governance, compute scale-up, and
-model-training testbed work that landed in Goals 10–12. Goals 13–20 are specified, not yet
-implemented. Every implemented goal reuses the same lifecycle, gates, evaluator, and memory
+Goals 01-20 are implemented.
+The implemented set includes the Tier 2 governance, compute scale-up, model-training
+testbed work that landed in Goals 10–12, the docs consistency contract in Goal 13,
+the pricing audit/budget-calibration contract in Goal 14, the hard
+resource-isolation backend in Goal 15, the durable research store in Goal 16, and the
+expanded research benchmark suite in Goal 17, and provider operations/observability in
+Goal 18, governance identity/policy hardening in Goal 19, and the bounded operational
+pilot plan/report in Goal 20.
+Every implemented goal reuses the same lifecycle, gates, evaluator, and memory
 schema — only what fills the roles changes, by **config not code**, as the tier rises. Each
 entry below names its goal, the modules/artifacts it added or will add, and what it does.
 
@@ -152,37 +159,62 @@ entry below names its goal, the modules/artifacts it added or will add, and what
   implementation provider), recorded in a `ModelRegistry`. Disabled entirely at Tier ≤ 1.
   CLI: `train-model`, `deploy-model`.
 
-### Cross-tier hardening and production refinements (Goals 13–20) — specified, not yet implemented
+### Cross-tier hardening and production refinements (Goals 13–19)
 
 - **Goal 13 — Documentation consistency contract** (`docs/goal_prompts/goals.json`,
-  docs checker): specifies a machine-readable goal manifest and docs consistency/privacy
+  `docs_check`, CLI): machine-readable goal manifest and docs consistency/privacy
   checker so README status, goal prompts, and Self-improvement sections cannot drift
-  silently.
-- **Goal 14 — Pricing audit and budget calibration** (`pricing`, `config`, CLI): specifies
-  config-level model price overrides, reviewed dates, pricing-audit reports, and stricter
-  budget calibration so scale decisions use current source-backed estimates.
-- **Goal 15 — Hard resource isolation backend** (`sandbox`, `scale`): specifies a
-  Linux/container hard-isolation backend with cgroup-backed memory/process limits,
-  process-tree accounting, no execution-plane network, and portable local fallback tests.
-- **Goal 16 — Durable research store and query layer** (`archive`, `memory`, `storage`):
-  specifies a storage interface plus SQLite backend with migrations, idempotency,
-  stable lineage IDs, JSONL export compatibility, and optional tamper-evident governance
-  records.
-- **Goal 17 — Research benchmark suite expansion** (`tasks/research/`, `research`):
-  specifies a larger fixed benchmark with at least 10 tasks per existing family, new
-  families, adversarial/noisy tasks, and richer per-family/cost-per-promotion summaries.
-- **Goal 18 — Provider operations and observability** (`providers/`, `budget`, reports):
-  specifies provider error taxonomy, bounded retries, request metadata, per-role
-  concurrency limits, and spend/latency/error reports by provider, model, role, and task
-  family.
-- **Goal 19 — Governance identity and policy hardening** (`governance`, storage, CLI):
-  specifies typed operator identities, signed approvals, policy templates, two-person
-  approval where required, governance packet export, and ledger verification while keeping
-  agents unable to approve.
-- **Goal 20 — Bounded operational pilot and cost-per-promotion report** (`runs/pilots/`,
-  reports): specifies a fixed, budget-capped Tier 0 vs cheap-frontier vs strong-frontier
-  pilot that reports cost, promotion quality, safety escalations, and a continue/revise/stop
-  recommendation before any serious scale-up.
+  silently. CLI: `check-docs`; task: `mise run check-docs`.
+- **Goal 14 — Pricing audit and budget calibration** (`providers/pricing`, `config`,
+  CLI): config-level model price overrides with reviewed dates and source notes, pricing
+  metadata recorded in model-call ledgers, and `pricing-audit` reporting for configured
+  providers, stale/missing prices, budget ceilings, and representative cycle costs.
+- **Goal 15 — Hard resource isolation backend** (`backends`, `sandbox.run_guarded`,
+  `scale`): a sandbox backend abstraction behind the guarded execution path. The portable
+  `local` backend (the developer fallback) now sums the whole process group's RSS and
+  process count, so a forked child cannot dodge the memory/process ceiling; the
+  `linux_guarded` backend lets the Linux cgroup v2 kernel enforce `memory.max` (OOM-kill),
+  `pids.max`, and peak accounting where available. A config `compute` backend policy can
+  require a hard backend above a chosen tier (`hard_backend_above_tier`), with an explicit
+  `allow_local_dev` override. CLI: `sandbox-backends`, `run-scaled --backend`.
+- **Goal 16 — Durable research store and query layer** (`storage`, `schemas`, CLI): a
+  storage interface over every append-only stream (attempts, research/training attempts,
+  model calls, memory, meta-changes, governance, artifacts, deployments). JSONL stays the
+  default transparent backend; an opt-in SQLite backend adds schema migrations, idempotency
+  keys (repeated writes dedupe), hash-chained tamper-evidence for governance/artifact
+  records, and byte-compatible JSONL export/import. `summarize-runs`/`summarize-research`
+  read through either backend. CLI: `storage-migrate`, `storage-import`, `storage-export`,
+  `storage-verify`.
+- **Goal 17 — Research benchmark suite expansion** (`tasks/research/`, `research`): expands
+  the fixed suite to at least 10 tasks each for algorithm, training, and policy work, adds
+  data-cleaning and parser/validator families, tags adversarial variants, keeps hidden data
+  held out of prompts and candidate working directories, and reports richer per-family
+  summary fields including mixed/failed outcomes, hidden/reproducibility failures, and
+  cost per promotion.
+- **Goal 18 — Provider operations and observability** (`providers/ops`, `providers/_http`,
+  CLI): classified provider errors, bounded retry policy with no retries for auth/config or
+  budget failures, provider request metadata on ledger rows, per-provider ops config, failed
+  call records in the single-agent loop, and `provider-report` for spend, latency, retry,
+  error, family-spend, and cost-per-promotion summaries.
+- **Goal 19 — Governance identity and policy hardening** (`governance`, `schemas`, CLI,
+  `config/tier2.governed.yaml`): typed operator identities, local signing proofs over
+  canonical approval payloads, per-action policy templates, two-person approval where
+  required, governance packet export, and identity/policy ledger verification. Existing
+  Goal 10 ledgers remain readable as legacy records; new hardened approvals validate active
+  operators, roles, signatures, requester/approver separation, expiry, and exact content
+  hashes. Human-only CLI verbs manage operators and approvals; the agent tool surface still
+  has no approval, signing, operator-management, or policy-mutation tool.
+
+### Cross-tier hardening and production refinements (Goal 20)
+- **Goal 20 — Bounded operational pilot and cost-per-promotion report** (`pilot`,
+  `docs/17_operational_pilot_plan.md`, `config/tier1.cheap_frontier.yaml`, CLI): a fixed,
+  budget-capped Tier 0 vs cheap-frontier vs strong-frontier pilot plan with immutable task
+  list, per-arm configs, stop conditions, command transcript generation, and a Markdown
+  report rendered from archived research attempts plus model-call ledgers. The report
+  separates accepted/promoted, mixed/escalated, and failed results; computes estimated spend,
+  cost per accepted promotion, cost per family, hidden/reproducibility/safety rates, common
+  failure signatures; flags budget breaches or missing evidence; and emits a
+  continue/revise/stop recommendation without approving any scale-up.
 
 The canonical interface is `uv run siro` (mise tasks are thin wrappers):
 
@@ -200,9 +232,28 @@ uv run siro summarize-research                        # per-family suite summary
 uv run siro propose-meta-change runs/attempts.jsonl   # meta-research outer loop (Goal 05)
 uv run siro request-approval budget_increase --target max_usd_per_run --payload '{"max_usd_per_run":20}'  # Tier 2 governance request (Goal 10)
 uv run siro approve <request_id> --by <human>         # human-only grant; list-approvals/deny/revoke too (Goal 10)
+uv run siro create-operator alice --display-name "Alice Reviewer" --role approver  # local operator registry (Goal 19)
+uv run siro approve <request_id> --by alice --signing-key "$LOCAL_DEV_SIGNING_KEY" --config config/tier2.governed.yaml  # identity-validated signed proof (Goal 19)
+uv run siro verify-governance --config config/tier2.governed.yaml  # verify approval identities, hashes, and signatures (Goal 19)
+uv run siro export-governance-packet <request_id> --config config/tier2.governed.yaml  # request/payload/evidence/history packet (Goal 19)
 uv run siro run-scaled --compute-tier 1               # eval under a governed compute budget (Goal 11)
+uv run siro sandbox-backends                          # list resource-isolation backends + availability (Goal 15)
+uv run siro run-scaled --compute-tier 1 --backend linux_guarded  # hard, OS-enforced isolation on a supported host (Goal 15)
 uv run siro train-model exp1                          # governed weight-update experiment (Goal 12)
 uv run siro deploy-model <artifact_id> implementation --implementation-provider anthropic --reviewer-provider openai  # gated deploy (Goal 12)
+uv run siro check-docs                                # README/manifest/goal prompt/privacy contract (Goal 13)
+mise run check-docs                                   # thin wrapper around the same docs contract
+uv run siro pricing-audit --config config/tier1.frontier.yaml --strict  # pricing freshness and budget audit (Goal 14)
+mise run pricing-audit                                # thin wrapper around the strict Tier 1 pricing audit
+uv run siro storage-migrate --store runs/siro.db      # create/upgrade the durable SQLite store (Goal 16)
+uv run siro storage-import --store runs/siro.db       # idempotently load JSONL archives into SQLite (Goal 16)
+uv run siro storage-export --store runs/siro.db --to-dir runs/export  # SQLite -> JSONL backup, reader-compatible (Goal 16)
+uv run siro storage-verify --store runs/siro.db       # verify governance/artifact hash chains (Goal 16)
+uv run siro summarize-runs --store runs/siro.db       # summaries read JSONL or SQLite (Goal 16)
+uv run siro provider-report --model-calls runs/model_calls.jsonl  # provider spend/latency/retry/error report (Goal 18)
+uv run siro pilot-init                              # write fixed pilot plan + command transcript (Goal 20)
+uv run siro pilot-run                               # run required pilot arms into per-arm archives (Goal 20)
+uv run siro pilot-report                            # render cost-per-promotion pilot report from archived ledgers (Goal 20)
 uv run pytest tests/test_cli.py::test_tier2_model_training_smoke_path_uses_separate_train_and_deploy_approvals  # cheap Tier 2 approval/deploy smoke
 ```
 
@@ -210,7 +261,9 @@ uv run pytest tests/test_cli.py::test_tier2_model_training_smoke_path_uses_separ
 
 1. Read `docs/00_principles.md` and `docs/01_system_architecture.md` for the design.
 2. For historical build context, read the implemented goal prompts in order: `01`–`06` for
-   Tier 0, `07`–`09` for Tier 1, and `10`–`12` for the Tier 2 governed testbed.
+   Tier 0, `07`–`09` for Tier 1, `10`–`12` for the Tier 2 governed testbed, and `13`–`18`
+   for the cross-tier hardening contracts.
 3. Use the command block above to exercise the current implementation by tier; lowering a
    run from Tier 2 → 1 → 0 is config-only.
-4. Treat goals `13`–`20` as the post-Tier-2 hardening roadmap before any serious scale-up.
+4. Treat goals `19`–`20` as the remaining post-Tier-2 hardening roadmap before any serious
+   scale-up.

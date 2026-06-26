@@ -123,6 +123,16 @@ Refinement:
 - Before any real scale-up, require the hard isolation test suite to pass in the target
   deployment environment.
 
+**Resolved by Goal 15.** `src/siro/backends.py` now factors guarded execution into a backend
+abstraction. The portable `local` backend is documented as the **developer fallback** — it
+still samples via `ps`, but now sums the whole **process group's** RSS and process count, so a
+forked child can no longer dodge the ceiling. The `linux_guarded` backend lets the Linux cgroup
+v2 kernel enforce `memory.max` (OOM-kill on breach), `pids.max`, and peak accounting; its
+hard-isolation tests skip cleanly when the backend is unavailable (e.g. on macOS). A `compute`
+backend policy (`hard_backend_above_tier`, `allow_local_dev`) refuses to run governed tiers on
+the portable monitor unless local development is explicitly opted in. The portable backend is a
+developer convenience, **not** the production isolation story.
+
 ### JSONL is right for MVP, not enough for production
 
 Append-only JSONL is excellent for readability and early auditability. It is not enough
@@ -137,6 +147,16 @@ Refinement:
 - Add schema migrations and validation on read.
 - Add run IDs, cycle IDs, lineage IDs, and idempotency keys everywhere.
 - Add hash chaining or signed records for governance and artifact ledgers.
+
+**Resolved by Goal 16 (SQLite slice).** `src/siro/storage.py` adds a storage interface over
+every append-only stream with two backends: JSONL stays the default human-readable format, and
+an opt-in SQLite backend adds schema migrations (validated on read via the typed models),
+idempotency keys (repeated writes dedupe), and hash chaining for the governance and artifact
+streams, with byte-compatible JSONL export/import (`storage-migrate`/`-import`/`-export`/
+`-verify`; summaries read either backend). A stable `call_id` was added to `ModelCall` (the one
+record lacking an id); attempt/cycle/lineage IDs already existed. Postgres for production
+coordination remains future work, but the interface is backend-agnostic so it slots in without
+touching call sites.
 
 ### The benchmark suite is still too small
 

@@ -1,0 +1,8 @@
+{
+  "family": "algorithm",
+  "objective": "Find the length of the longest repeated-value run.",
+  "edit_surface": "solution.py",
+  "primary_metric": "accuracy",
+  "higher_is_better": true,
+  "budget_seconds": 5.0
+}

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from ._http import Transport
 from ._openai_compatible import OpenAICompatibleClient
+from .ops import RetryPolicy
 from .pricing import Pricing
 
 #: Default Tier 0 endpoint — the OpenAI-compatible llama.cpp / LlamaBarn server.
@@ -34,6 +35,7 @@ class LocalOpenAIClient(OpenAICompatibleClient):
         temperature: float = 0.7,
         *,
         pricing: Pricing | None = None,
+        retry_policy: RetryPolicy | None = None,
         allowed_endpoints: list[str] | None = None,
         transport: Transport | None = None,
     ) -> None:
@@ -45,6 +47,7 @@ class LocalOpenAIClient(OpenAICompatibleClient):
             timeout_seconds=timeout_seconds,
             temperature=temperature,
             pricing=pricing or Pricing(),  # local inference is free
+            retry_policy=retry_policy,
             allowed_endpoints=allowed_endpoints,
             transport=transport,
         )

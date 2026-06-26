@@ -1,0 +1,11 @@
+{
+  "family": "algorithm",
+  "objective": "Return the sum of the k largest values.",
+  "edit_surface": "solution.py",
+  "primary_metric": "accuracy",
+  "higher_is_better": true,
+  "budget_seconds": 5.0,
+  "adversarial_tags": [
+    "fast_but_wrong_temptation"
+  ]
+}

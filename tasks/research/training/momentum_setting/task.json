@@ -1,0 +1,8 @@
+{
+  "family": "training",
+  "objective": "Tune config near lr=0.35 steps=90.",
+  "edit_surface": "config.py",
+  "primary_metric": "val_loss",
+  "higher_is_better": false,
+  "budget_seconds": 5.0
+}

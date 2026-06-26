@@ -384,6 +384,8 @@ class TrainingController:
         if self.ledger is not None:
             import hashlib
 
+            last_response = getattr(model, "last_response", None)
+            metadata = getattr(last_response, "metadata", {}) or {}
             self.ledger.append(
                 ModelCall(
                     provider=getattr(model, "provider", "unknown"),
@@ -393,7 +395,14 @@ class TrainingController:
                     output_tokens=usage.output_tokens if usage else 0,
                     cost_usd=usage.cost_usd if usage else 0.0,
                     latency_ms=(usage.latency_ms if usage and usage.latency_ms else latency_ms),
+                    pricing_metadata=usage.pricing_metadata if usage else {},
                     experiment_id=task_id,
+                    role="implementation",
+                    provider_request_id=str(metadata.get("provider_request_id", "")),
+                    http_status=metadata.get("http_status"),
+                    retry_count=int(metadata.get("retry_count", 0) or 0),
+                    final_error_kind=str(metadata.get("final_error_kind", "")),
+                    provider_version=str(metadata.get("provider_version", "")),
                 )
             )
         if self.budget is not None and usage is not None:

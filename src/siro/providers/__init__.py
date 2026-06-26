@@ -30,7 +30,8 @@ from .base import (
 )
 from .local import DEFAULT_BASE_URL, DEFAULT_MODEL, LocalOpenAIClient
 from .openai import OpenAIClient
-from .pricing import Pricing
+from .ops import ProviderOpsConfig
+from .pricing import Pricing, parse_price_override
 
 
 @dataclass(frozen=True)
@@ -48,18 +49,12 @@ class ProviderConfig:
     api_key_env: str | None = None
     timeout_seconds: float = 120.0
     temperature: float = 0.7
-    prices: tuple[float, float] | None = None
+    prices: Pricing | None = None
+    ops: ProviderOpsConfig = field(default_factory=ProviderOpsConfig)
     extra: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_block(cls, key: str, block: dict[str, Any]) -> "ProviderConfig":
-        prices = block.get("prices")
-        price_tuple: tuple[float, float] | None = None
-        if isinstance(prices, dict):
-            price_tuple = (
-                float(prices.get("input_per_mtok", 0.0)),
-                float(prices.get("output_per_mtok", 0.0)),
-            )
         return cls(
             key=key,
             backend=str(block.get("backend", key)),
@@ -68,7 +63,8 @@ class ProviderConfig:
             api_key_env=block.get("api_key_env"),
             timeout_seconds=float(block.get("timeout_seconds", 120.0)),
             temperature=float(block.get("temperature", 0.7)),
-            prices=price_tuple,
+            prices=parse_price_override(block.get("prices")),
+            ops=ProviderOpsConfig.from_block(block),
         )
 
 
@@ -100,6 +96,7 @@ def build_client(
             timeout_seconds=cfg.timeout_seconds,
             temperature=cfg.temperature,
             pricing=pricing,
+            retry_policy=cfg.ops.retry,
             allowed_endpoints=allowed_endpoints,
             transport=transport,
         )
@@ -111,6 +108,7 @@ def build_client(
             timeout_seconds=cfg.timeout_seconds,
             temperature=cfg.temperature,
             pricing=pricing,
+            retry_policy=cfg.ops.retry,
             allowed_endpoints=allowed_endpoints,
             transport=transport,
         )
@@ -122,6 +120,7 @@ def build_client(
             timeout_seconds=cfg.timeout_seconds,
             temperature=cfg.temperature,
             pricing=pricing,
+            retry_policy=cfg.ops.retry,
             allowed_endpoints=allowed_endpoints,
             transport=transport,
         )

@@ -22,6 +22,8 @@ import urllib.request
 from typing import Any, Callable, Protocol
 from urllib.parse import urlsplit
 
+from .ops import ProviderError, ProviderErrorKind, classify_http_error
+
 #: A transport posts a JSON body and returns the decoded JSON response.
 Transport = Callable[[str, dict[str, Any], dict[str, str], float], dict[str, Any]]
 
@@ -78,12 +80,38 @@ def post_json(
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            body = json.loads(resp.read().decode("utf-8"))
+            if isinstance(body, dict):
+                body.setdefault("_meta", {})
+                body["_meta"].update(
+                    {
+                        "http_status": resp.status,
+                        "provider_request_id": (
+                            resp.headers.get("x-request-id")
+                            or resp.headers.get("request-id")
+                            or resp.headers.get("anthropic-request-id")
+                            or ""
+                        ),
+                        "provider_version": resp.headers.get("openai-model") or "",
+                    }
+                )
+            return body
     except urllib.error.HTTPError as exc:  # pragma: no cover - needs a live server
         body = exc.read().decode("utf-8", "replace")
-        raise RuntimeError(f"Provider HTTP {exc.code} from {url}: {body}") from exc
+        request_id = (
+            exc.headers.get("x-request-id")
+            or exc.headers.get("request-id")
+            or exc.headers.get("anthropic-request-id")
+            or ""
+        )
+        raise classify_http_error(
+            exc.code, f"Provider HTTP {exc.code} from {url}: {body}", request_id=request_id
+        ) from exc
     except urllib.error.URLError as exc:  # pragma: no cover - needs a live server
-        raise RuntimeError(f"Provider endpoint unreachable at {url}: {exc.reason}") from exc
+        raise ProviderError(
+            ProviderErrorKind.TRANSIENT,
+            f"Provider endpoint unreachable at {url}: {exc.reason}",
+        ) from exc
 
 
 __all__ = ["Transport", "assert_allowed", "post_json"]
