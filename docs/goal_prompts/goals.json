@@ -197,13 +197,13 @@
             "summary": "Implements typed operator identities, signed approval proofs, policy templates, two-person approval, governance packet export, and identity/policy ledger verification."
         },
         {
-            "number": 20,
-            "title": "Bounded operational pilot and cost-per-promotion report",
-            "status": "specified",
-            "category": "Cross-tier hardening",
-            "prompt_path": "docs/goal_prompts/goal_20_operational_pilot_report.md",
-            "artifacts": ["runs/pilots/", "reports/"],
-            "summary": "Specifies a fixed, budget-capped pilot comparing local, cheap-frontier, and strong-frontier runs before scale-up."
-        }
-    ]
+      "number": 20,
+      "title": "Bounded operational pilot and cost-per-promotion report",
+      "status": "implemented",
+      "category": "Cross-tier hardening",
+      "prompt_path": "docs/goal_prompts/goal_20_operational_pilot_report.md",
+      "artifacts": ["src/siro/pilot.py", "docs/17_operational_pilot_plan.md", "config/tier1.cheap_frontier.yaml", "src/siro/cli.py"],
+      "summary": "Implements a fixed budget-capped operational pilot plan, command transcript generation, and a cost-per-promotion report over research/model-call ledgers."
+    }
+  ]
 }

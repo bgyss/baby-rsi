@@ -21,6 +21,8 @@ cycle uses:
                             representative cycle costs (Goal 14).
 - ``provider-report``     — summarize provider spend, latency, retries, and errors
                             from the audit ledger (Goal 18).
+- ``pilot-init`` / ``pilot-run`` / ``pilot-report`` — fixed operational pilot plan,
+                            execution wrapper, and decision report (Goal 20).
 - ``summarize-runs``      — reflect on the archive (real: counts + pass rate + best).
 - ``summarize-research``  — per-family summary of the research suite (Goal 09).
 - ``propose-meta-change`` — propose a process change (Goal 05).
@@ -73,6 +75,16 @@ from .model_training import (
     deploy_model,
 )
 from .orchestrator import Orchestrator
+from .pilot import (
+    DEFAULT_PILOT_PLAN_PATH,
+    DEFAULT_PILOT_REPORT_PATH,
+    DEFAULT_PILOT_ROOT,
+    PilotPlan,
+    archive_pilot_configs,
+    write_command_transcript,
+    write_default_pilot_plan,
+    write_pilot_report,
+)
 from .providers import ModelClient
 from .providers.pricing import Pricing
 from .research import (
@@ -1059,6 +1071,90 @@ def _cmd_provider_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_pilot_init(args: argparse.Namespace) -> int:
+    plan_path = (
+        args.root / "pilot_plan.json"
+        if args.plan == DEFAULT_PILOT_PLAN_PATH and args.root != DEFAULT_PILOT_ROOT
+        else args.plan
+    )
+    plan = write_default_pilot_plan(plan_path)
+    transcript = write_command_transcript(plan, plan_path.parent)
+    archived_configs = archive_pilot_configs(plan, plan_path.parent)
+    print(f"Wrote pilot plan to {plan_path}.")
+    print(f"Wrote command transcript to {transcript}.")
+    print("Archived configs: " + ", ".join(str(path) for path in archived_configs))
+    print(f"Expected report path: {plan.expected_report_path}")
+    return 0
+
+
+def _cmd_pilot_run(args: argparse.Namespace) -> int:
+    plan = PilotPlan.from_path(args.plan)
+    root = args.plan.parent
+    arms = plan.arms
+    if args.arm:
+        arms = [arm for arm in arms if arm.name == args.arm]
+        if not arms:
+            print(f"unknown pilot arm {args.arm!r}")
+            return 2
+    elif not args.include_conditional:
+        arms = [arm for arm in arms if not arm.condition]
+
+    print(f"pilot-run: {plan.pilot_id}  arms={', '.join(arm.name for arm in arms)}")
+    for arm in arms:
+        archive = root / arm.name / "research_attempts.jsonl"
+        model_calls = root / arm.name / "model_calls.jsonl"
+        memory = root / arm.name / "memory.jsonl"
+        config = load_config(Path(arm.config))
+        ledger = ModelCallLedger(model_calls)
+        budget = None if config.budget.unbounded else BudgetTracker(config.budget, ledger=ledger)
+        orchestrator = Orchestrator.from_config(
+            config,
+            memory=ResearchMemory(memory),
+            ledger=ledger,
+            budget=budget,
+            research_archive=ResearchArchive(archive),
+        )
+        print(f"\n[{arm.name}] config={arm.config} tasks={len(plan.tasks)}")
+        for task in plan.tasks:
+            try:
+                result = orchestrator.run_research_cycle(args.objective, Path(task))
+            except BudgetExceeded as exc:
+                print(f"HALTED — budget ceiling breached ({exc.kind}): {exc}")
+                print("Escalation required: stop this pilot before any budget change.")
+                return 2
+            metric = result.metric
+            primary = (
+                f"{metric.primary_name}={metric.primary:g} passed={metric.passed}"
+                if metric is not None
+                else "(not evaluated)"
+            )
+            print(
+                f"  [{result.family:>9}] {result.task_id:<16} "
+                f"{result.promotion_decision.value.upper():<9} {primary}"
+            )
+            for escalation in result.escalations:
+                print(f"      ESCALATION: {escalation}")
+        print(f"  archived attempts={archive} model_calls={model_calls}")
+    return 0
+
+
+def _cmd_pilot_report(args: argparse.Namespace) -> int:
+    report = write_pilot_report(
+        args.plan,
+        args.output,
+        provider_reconciliation=args.provider_reconciliation,
+    )
+    output = args.output or DEFAULT_PILOT_REPORT_PATH
+    print(f"Wrote pilot report to {output}.")
+    if "budget breach" in report.lower():
+        print("HALTED — pilot budget breach detected; escalate before continuing.")
+        return 2
+    if "missing evidence" in report.lower():
+        print("Pilot report has missing evidence; complete required arms before scale decisions.")
+        return 1
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="siro",
@@ -1534,6 +1630,74 @@ def build_parser() -> argparse.ArgumentParser:
         f"(default: {DEFAULT_RESEARCH_ATTEMPTS_PATH}).",
     )
     p_provider_report.set_defaults(func=_cmd_provider_report)
+
+    p_pilot_init = sub.add_parser(
+        "pilot-init",
+        help="Write the fixed bounded operational pilot plan and command transcript (Goal 20).",
+    )
+    p_pilot_init.add_argument(
+        "--plan",
+        type=Path,
+        default=DEFAULT_PILOT_PLAN_PATH,
+        help=f"Pilot plan path (default: {DEFAULT_PILOT_PLAN_PATH}).",
+    )
+    p_pilot_init.add_argument(
+        "--root",
+        type=Path,
+        default=DEFAULT_PILOT_ROOT,
+        help=f"Pilot root directory (default: {DEFAULT_PILOT_ROOT}).",
+    )
+    p_pilot_init.set_defaults(func=_cmd_pilot_init)
+
+    p_pilot_run = sub.add_parser(
+        "pilot-run",
+        help="Run the fixed operational pilot tasks into per-arm archives (Goal 20).",
+    )
+    p_pilot_run.add_argument(
+        "--plan",
+        type=Path,
+        default=DEFAULT_PILOT_PLAN_PATH,
+        help=f"Pilot plan path (default: {DEFAULT_PILOT_PLAN_PATH}).",
+    )
+    p_pilot_run.add_argument(
+        "--arm",
+        default="",
+        help="Run only one named arm (for example tier0_local or tier1_cheap_frontier).",
+    )
+    p_pilot_run.add_argument(
+        "--include-conditional",
+        action="store_true",
+        help="Also run conditional arms such as the strong-frontier follow-up.",
+    )
+    p_pilot_run.add_argument(
+        "--objective",
+        default="Improve the task against its objective metric.",
+        help="Pilot objective passed to every research cycle.",
+    )
+    p_pilot_run.set_defaults(func=_cmd_pilot_run)
+
+    p_pilot_report = sub.add_parser(
+        "pilot-report",
+        help="Render the bounded operational pilot report from archived ledgers (Goal 20).",
+    )
+    p_pilot_report.add_argument(
+        "--plan",
+        type=Path,
+        default=DEFAULT_PILOT_PLAN_PATH,
+        help=f"Pilot plan path (default: {DEFAULT_PILOT_PLAN_PATH}).",
+    )
+    p_pilot_report.add_argument(
+        "--output",
+        type=Path,
+        default=DEFAULT_PILOT_REPORT_PATH,
+        help=f"Report output path (default: {DEFAULT_PILOT_REPORT_PATH}).",
+    )
+    p_pilot_report.add_argument(
+        "--provider-reconciliation",
+        default="",
+        help="Optional provider-dashboard reconciliation note or URL.",
+    )
+    p_pilot_report.set_defaults(func=_cmd_pilot_report)
 
     p_sum = sub.add_parser("summarize-runs", help="Summarize an attempts archive.")
     p_sum.add_argument(

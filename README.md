@@ -34,8 +34,9 @@ All design docs live under [`docs/`](docs/).
 | `docs/14_project_retrospective.md` | Retrospective on the implemented system and refinement backlog. |
 | `docs/15_scale_cost_model.md` | Source-backed deployment cost model and scale bands. |
 | `docs/16_low_cost_validation_plan.md` | Cheap local-to-frontier validation ladder. |
+| `docs/17_operational_pilot_plan.md` | Fixed bounded Tier 0 vs frontier pilot plan and report contract. |
 
-Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`19` are implemented. Goal `20` is the remaining post-Tier-2 refinement spec for the bounded operational pilot. Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
+Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`20` are implemented. Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
 
 ## Capability tiers
 
@@ -61,13 +62,14 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goals 01-19 are implemented; Goals 20 are specified, not yet implemented.
+Goals 01-20 are implemented.
 The implemented set includes the Tier 2 governance, compute scale-up, model-training
 testbed work that landed in Goals 10–12, the docs consistency contract in Goal 13,
 the pricing audit/budget-calibration contract in Goal 14, the hard
 resource-isolation backend in Goal 15, the durable research store in Goal 16, and the
 expanded research benchmark suite in Goal 17, and provider operations/observability in
-Goal 18, and governance identity/policy hardening in Goal 19.
+Goal 18, governance identity/policy hardening in Goal 19, and the bounded operational
+pilot plan/report in Goal 20.
 Every implemented goal reuses the same lifecycle, gates, evaluator, and memory
 schema — only what fills the roles changes, by **config not code**, as the tier rises. Each
 entry below names its goal, the modules/artifacts it added or will add, and what it does.
@@ -203,11 +205,16 @@ entry below names its goal, the modules/artifacts it added or will add, and what
   hashes. Human-only CLI verbs manage operators and approvals; the agent tool surface still
   has no approval, signing, operator-management, or policy-mutation tool.
 
-### Cross-tier hardening and production refinements (Goal 20) — specified, not yet implemented
-- **Goal 20 — Bounded operational pilot and cost-per-promotion report** (`runs/pilots/`,
-  reports): specifies a fixed, budget-capped Tier 0 vs cheap-frontier vs strong-frontier
-  pilot that reports cost, promotion quality, safety escalations, and a continue/revise/stop
-  recommendation before any serious scale-up.
+### Cross-tier hardening and production refinements (Goal 20)
+- **Goal 20 — Bounded operational pilot and cost-per-promotion report** (`pilot`,
+  `docs/17_operational_pilot_plan.md`, `config/tier1.cheap_frontier.yaml`, CLI): a fixed,
+  budget-capped Tier 0 vs cheap-frontier vs strong-frontier pilot plan with immutable task
+  list, per-arm configs, stop conditions, command transcript generation, and a Markdown
+  report rendered from archived research attempts plus model-call ledgers. The report
+  separates accepted/promoted, mixed/escalated, and failed results; computes estimated spend,
+  cost per accepted promotion, cost per family, hidden/reproducibility/safety rates, common
+  failure signatures; flags budget breaches or missing evidence; and emits a
+  continue/revise/stop recommendation without approving any scale-up.
 
 The canonical interface is `uv run siro` (mise tasks are thin wrappers):
 
@@ -244,6 +251,9 @@ uv run siro storage-export --store runs/siro.db --to-dir runs/export  # SQLite -
 uv run siro storage-verify --store runs/siro.db       # verify governance/artifact hash chains (Goal 16)
 uv run siro summarize-runs --store runs/siro.db       # summaries read JSONL or SQLite (Goal 16)
 uv run siro provider-report --model-calls runs/model_calls.jsonl  # provider spend/latency/retry/error report (Goal 18)
+uv run siro pilot-init                              # write fixed pilot plan + command transcript (Goal 20)
+uv run siro pilot-run                               # run required pilot arms into per-arm archives (Goal 20)
+uv run siro pilot-report                            # render cost-per-promotion pilot report from archived ledgers (Goal 20)
 uv run pytest tests/test_cli.py::test_tier2_model_training_smoke_path_uses_separate_train_and_deploy_approvals  # cheap Tier 2 approval/deploy smoke
 ```
 
