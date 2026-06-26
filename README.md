@@ -40,7 +40,7 @@ For *operating* the implemented system (rather than its design), see
 [`docs/operating_guide.md`](docs/operating_guide.md) and the repo-local Claude Code skills
 in [`.claude/skills/`](.claude/skills/).
 
-Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`20` are implemented. Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
+Goal prompts live in `docs/goal_prompts/`: `01`–`06` build the local Tier 0 testbed; `07`–`09` generalize the model layer and stand up the Tier 1 frontier organization; `10`–`12` build Tier 2 governed scale-up — the governance gate + human-approval workflow (`10`), governed compute scale-up (`11`), and governed model-training experiments (`12`). Goals `01`–`20` are implemented; `21` (a conversational operating interface hosted in Claude Code) is specified. Every goal prompt carries a `## Self-improvement` section that binds its component into the bounded self-improvement cycle defined in `docs/13_self_improvement_loop.md`.
 
 ## Capability tiers
 
@@ -66,7 +66,7 @@ mise tasks         # list available tasks
 
 ## Implementation status
 
-Goals 01-20 are implemented.
+Goals 01-20 are implemented; Goals 21 are specified, not yet implemented.
 The implemented set includes the Tier 2 governance, compute scale-up, model-training
 testbed work that landed in Goals 10–12, the docs consistency contract in Goal 13,
 the pricing audit/budget-calibration contract in Goal 14, the hard
@@ -220,6 +220,16 @@ entry below names its goal, the modules/artifacts it added or will add, and what
   failure signatures; flags budget breaches or missing evidence; and emits a
   continue/revise/stop recommendation without approving any scale-up.
 
+### Conversational operations (Goal 21) — specified, not yet implemented
+- **Goal 21 — Conversational operating interface in Claude Code** (`.claude/skills/`,
+  `docs/operating_guide.md`, `src/siro/cli.py`): operate the system as a dialogue hosted
+  inside Claude Code through the repo-local skills (intent → plan → confirm → act), rather
+  than a memorized sequence of commands — explicitly **not** a separate REPL or `siro chat`
+  process. Adds only thin, non-interactive CLI affordances (opt-in structured `--json`
+  output on the read-only summaries and a side-effect-free dry-run/plan path) so the skills
+  can read precise state and propose-before-acting, with every governed or irreversible
+  action still human-confirmed and the plane/governance bounds unchanged.
+
 ## Operating the system
 
 The canonical interface is `uv run siro` (mise tasks are thin wrappers). Rather than a
@@ -254,7 +264,7 @@ uv run siro run-research tasks/research/training/tiny_mlp --config config/tier0.
 2. For historical build context, read the implemented goal prompts in order: `01`–`06` for
    Tier 0, `07`–`09` for Tier 1, `10`–`12` for the Tier 2 governed testbed, and `13`–`18`
    for the cross-tier hardening contracts.
-3. Use the command block above to exercise the current implementation by tier; lowering a
-   run from Tier 2 → 1 → 0 is config-only.
-4. Treat goals `19`–`20` as the remaining post-Tier-2 hardening roadmap before any serious
-   scale-up.
+3. Use `docs/operating_guide.md` (or the `.claude/skills/` skills) to exercise the current
+   implementation by tier; lowering a run from Tier 2 → 1 → 0 is config-only.
+4. Treat goal `21` (a conversational operating interface hosted in Claude Code) as the next
+   operability item on the roadmap.
