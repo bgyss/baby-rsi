@@ -207,12 +207,12 @@
     },
     {
       "number": 21,
-      "title": "Conversational operating interface in Claude Code",
+      "title": "Conversational operating interface in Claude Code and Codex",
       "status": "implemented",
       "category": "Operability",
       "prompt_path": "docs/goal_prompts/goal_21_conversational_interface.md",
-      "artifacts": [".claude/skills/", "docs/operating_guide.md", "src/siro/cli.py"],
-      "summary": "Operates siro as a dialogue hosted in Claude Code through the repo-local skills (no REPL); adds thin CLI affordances — a global --json structured output on the read-only summaries and a side-effect-free --dry-run plan path that prints command/tier/governance implications — so the skills read state and propose-before-acting within the existing governance bounds."
+      "artifacts": [".claude/skills/", ".codex/skills/", "docs/operating_guide.md", "src/siro/cli.py"],
+      "summary": "Operates siro as a dialogue hosted in Claude Code or Codex through host-specific repo-local skills (no REPL); adds thin CLI affordances — a global --json structured output on the read-only summaries and a side-effect-free --dry-run plan path that prints command/tier/governance implications — so the skills read state and propose-before-acting within the existing governance bounds."
     }
   ]
 }
