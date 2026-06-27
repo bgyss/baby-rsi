@@ -6,8 +6,9 @@ organization that can run the same bounded, auditable loop over mathematics, chi
 the physical sciences, drug discovery, and the life sciences. It motivates a small set of
 future goal prompts (sketched in [Staging](#staging)); the Goal 22 domain-pack interface,
 the Goal 23 mathematics pack, the Goal 24 statistical reproducibility gate (Regime B), and the
-Goal 25 chip-design pack (Regime A correctness + Regime B PPA) have landed, while the
-external-experiment regime (Regime C) and the life-science capstone remain staged work.
+Goal 25 chip-design pack (Regime A correctness + Regime B PPA), and the Goal 26 governed
+external-experiment boundary (Regime C) have landed, while the life-science capstone remains
+staged work.
 
 The thesis: **the core loop is already domain-agnostic, and the work is not a rewrite — it
 is hardening four existing seams and generalizing two gates.** The non-negotiable invariants
@@ -128,19 +129,30 @@ any benchmark or budget. This unlocks **Regime B** for every pack that follows.
 
 ### 3. A governed external-experiment boundary (Regime C)
 
-Add a clean lifecycle `propose → approve → execute (human / robotic) → ingest`:
+**Implemented in Goal 26** (`src/siro/external.py`). A clean lifecycle
+`propose → approve → execute (human / instrument) → ingest`:
 
 - The org still only *reasons and proposes*; the execution plane stays offline.
-- The external step is a new `GovernedAction` variant (e.g. `EXTERNAL_EXPERIMENT` with a typed
-  payload: assay, fab submit, instrument run), authorized through the existing approval ledger
-  and compute-budget tiers ([`11`](goal_prompts/goal_11_governed_compute_scaleup.md)).
-- A human (or an instrument under human authority) executes the approved action and returns a
-  **signed result record**; the controller ingests it as the metric for that candidate.
-- Negative results are first-class, exactly as in-silico negatives are.
+- The external step is the `EXTERNAL_EXPERIMENT` `GovernedAction` with a typed
+  `ExternalExperimentSpec` payload (action class — assay / fabrication / instrument /
+  external-compute — the exact proposal, and the cost/risk envelope), authorized through the
+  existing approval ledger and compute-budget tiers
+  ([`11`](goal_prompts/goal_11_governed_compute_scaleup.md)) under the Goal 19 identity rules.
+  No agent tool authorizes it; default-deny, expiry, and revocation are honored.
+- A human (or an instrument under human authority) executes the approved action **outside**
+  `siro` and returns a **signed `ExternalResultRecord`** bound to the live approval; the
+  controller validates the binding and ingests it as the candidate's `MetricRecord`.
+- The Regime-C `EvaluatorAdapter` (`ExternalOracleAdapter`, regime `external-oracle`) scores a
+  candidate on the ingested, approved, signed result instead of running code, and promotes only
+  when a live, matching result resolves — an unapproved / expired / revoked / hash-mismatched /
+  unsigned result is logged `REJECTED` and never promotes.
+- Negative and null results are first-class, exactly as in-silico negatives are.
 
 Every invariant holds: no candidate code touches the network or an instrument; the irreversible,
 expensive action is human-approved and bound to the exact proposal via `governed_action_hash`;
-the audit trail is end-to-end.
+the audit trail (request → decision → signed result, and every rejection) is end-to-end. Human
+CLI verbs drive it: `propose-external-experiment`, `list-external-experiments`,
+`ingest-external-result`, `external-audit`.
 
 The agent org itself needs **no structural change** for any of this — only different prompts,
 tools, and references per pack.
@@ -160,7 +172,9 @@ contract — the outer meta-loop improves *how packs propose and select*, bounde
    bound across fixed seeded replicates).
 4. **Chip-design pack** — implemented in Goal 25; offline Yosys equivalence (Regime A
    correctness) + synthesis area (Regime B PPA) under the statistical gate.
-5. **Governed external-experiment boundary** — the Regime-C `GovernedAction` lifecycle.
+5. **Governed external-experiment boundary** — implemented in Goal 26; the Regime-C
+   `EXTERNAL_EXPERIMENT` `GovernedAction` propose → approve → execute → ingest lifecycle with a
+   signed, hash-bound result and the `external-oracle` evaluator adapter.
 6. **Drug / life-science pack** — in-silico screening on (3), wet-lab confirmation on (5).
 
 ## Invariants this exploration must not break

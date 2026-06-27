@@ -67,7 +67,7 @@ Lowering tier must not require a code change.
 
 ## Implementation Status
 
-Goals 01-25 are implemented; Goals 26-27 are specified, not yet implemented. Keep this
+Goals 01-26 are implemented; Goals 27 are specified, not yet implemented. Keep this
 section grouped by tier; put detailed notes in
 [`docs/implementation_status.md`](docs/implementation_status.md).
 
@@ -130,7 +130,7 @@ section grouped by tier; put detailed notes in
   repo-local skills drive the non-interactive CLI; global `--json` and `--dry-run` support
   precise summaries and previews without side effects.
 
-### Generalization to the Sciences (Goals 22-25)
+### Generalization to the Sciences (Goals 22-26)
 
 See [`docs/18_generalizing_to_sciences.md`](docs/18_generalizing_to_sciences.md) for the
 evaluator-regime taxonomy and design rationale behind these goals.
@@ -152,12 +152,17 @@ evaluator-regime taxonomy and design rationale behind these goals.
   non-equivalent design never promotes; the candidate edits only its declared design surface
   (RTL or an allowlisted synthesis recipe), with the reference held out. Selected by
   `config/tier{0,1}.chip.yaml`.
+- **Goal 26 — Governed external-experiment boundary** (external, schemas): an
+  `EXTERNAL_EXPERIMENT` GovernedAction with a propose → approve → execute → ingest lifecycle so
+  Regime-C sciences (wet-lab assays, fabrication, instruments, paid compute) feed signed,
+  human-approved results back into the loop while the execution plane never reaches the outside
+  world. An `ExternalOracleAdapter` scores a candidate on the ingested, approved, signed result
+  instead of running code; a result promotes only when bound (by `governed_action_hash`) to a
+  live, matching approval — an unapproved / expired / revoked / hash-mismatched / unsigned
+  result is rejected and logged. CLI: `propose-external-experiment`, `list-external-experiments`,
+  `ingest-external-result`, `external-audit`.
 
-### Generalization to the Sciences (Goals 26-27 — specified, not yet implemented)
-- **Goal 26 — Governed external-experiment boundary** (governance, schemas): an
-  `EXTERNAL_EXPERIMENT` GovernedAction and propose → approve → execute → ingest lifecycle so
-  Regime-C sciences feed signed, human-approved results back without the execution plane reaching
-  the outside world.
+### Generalization to the Sciences (Goal 27 — specified, not yet implemented)
 - **Goal 27 — Drug and life-science pack** (packs/life_science): two-stage capstone — offline
   in-silico screening (Regime B) gates a few human-approved wet-lab confirmations (Regime C).
 

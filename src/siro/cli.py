@@ -51,6 +51,14 @@ from .budget import BudgetExceeded, BudgetTracker
 from .config import DEFAULT_CONFIG_PATH, load_config
 from .controller import Controller, select_best
 from .docs_check import DEFAULT_MANIFEST_PATH, check_docs
+from .external import (
+    DEFAULT_EXTERNAL_RESULTS_PATH,
+    ExternalResultLedger,
+    ExternalResultRejected,
+    external_spec_for,
+    ingest_external_result,
+    propose_external_experiment,
+)
 from .governance import (
     DEFAULT_APPROVALS_PATH,
     DEFAULT_OPERATORS_PATH,
@@ -108,6 +116,7 @@ from .scale import (
 from .schemas import (
     ApprovalScope,
     AttemptStatus,
+    ExternalResultStatus,
     GovernedAction,
     MetaChangeRecord,
     MetaRecommendation,
@@ -221,6 +230,16 @@ _PLAN_INFO: dict[str, dict[str, str]] = {
     },
     "create-operator": {"effect": "writes the operator registry", "governance": "human-managed"},
     "revoke-operator": {"effect": "revokes a local operator", "governance": "human-managed"},
+    "propose-external-experiment": {
+        "effect": "records a pending EXTERNAL_EXPERIMENT request",
+        "governance": "request only; a human still approves, and a human still runs the action",
+    },
+    "list-external-experiments": {"effect": "read-only", "governance": "none"},
+    "ingest-external-result": {
+        "effect": "records a signed external result bound to a live approval",
+        "governance": "HUMAN-ONLY — only a human operator attests a real-world result",
+    },
+    "external-audit": {"effect": "read-only", "governance": "none"},
     "storage-migrate": {"effect": "creates/upgrades the SQLite store", "governance": "none"},
     "storage-import": {"effect": "writes rows into the SQLite store", "governance": "none"},
     "pilot-init": {"effect": "writes the fixed pilot plan + transcript", "governance": "none"},
@@ -830,6 +849,133 @@ def _cmd_export_governance_packet(args: argparse.Namespace) -> int:
         print(f"cannot export governance packet: {exc}")
         return 2
     print(json.dumps(packet, indent=2, sort_keys=True))
+    return 0
+
+
+# --- governed external experiments (Tier 2, Goal 26) ----------------------- #
+
+
+def _external_gate(args: argparse.Namespace) -> GovernanceGate:
+    config = load_config(args.config) if getattr(args, "config", None) else None
+    if config:
+        return GovernanceGate.from_config(config, ledger=ApprovalLedger(args.ledger))
+    return GovernanceGate(ApprovalLedger(args.ledger))
+
+
+def _cmd_propose_external_experiment(args: argparse.Namespace) -> int:
+    """Record a typed EXTERNAL_EXPERIMENT request (propose step). A human still approves."""
+    gate = _external_gate(args)
+    task = load_research_task(args.task_dir)
+    candidate = (
+        args.candidate.read_text(encoding="utf-8") if args.candidate else task.surface_code
+    )
+    spec = external_spec_for(task, candidate)
+    req = propose_external_experiment(
+        gate,
+        spec,
+        actor=args.actor,
+        rationale=args.rationale,
+        rollback_plan=args.rollback_plan,
+        evidence=args.evidence,
+    )
+    print(f"requested external_experiment (request {req.request_id})")
+    print(f"  class:   {spec.action_class.value}  target: {spec.task_id}")
+    print(f"  measure: {spec.measurement} ({spec.primary_name})")
+    print(f"  cost:    ${spec.cost_usd:g}  risk: {spec.risk}  irreversible: {spec.irreversible}")
+    print(f"  hash:    {req.content_hash}")
+    print(f"A human must approve: siro approve {req.request_id} --by <human>")
+    print("Then a human runs the action OUTSIDE siro and ingests a signed result:")
+    print(f"  siro ingest-external-result {req.request_id} --operator <id> --primary <v> --signing-key <key>")
+    print(f"Recorded to {args.ledger}.")
+    return 0
+
+
+def _cmd_list_external_experiments(args: argparse.Namespace) -> int:
+    gate = _external_gate(args)
+    requests = [
+        r for r in gate.ledger.requests() if r.action is GovernedAction.EXTERNAL_EXPERIMENT
+    ]
+    results = ExternalResultLedger(args.results)
+    rows = []
+    for req in requests:
+        status = gate.status_of(req.request_id)
+        ingested = [r for r in results.for_request(req.request_id) if r.status.value != "rejected"]
+        rows.append(
+            {
+                "request_id": req.request_id,
+                "status": status,
+                "class": req.payload.get("action_class", "?"),
+                "target": req.target or None,
+                "result": (ingested[-1].status.value if ingested else None),
+            }
+        )
+    if args.status:
+        rows = [r for r in rows if r["status"] == args.status]
+    if _wants_json(args):
+        return _emit_json({"ledger": str(args.ledger), "external_experiments": rows})
+    if not rows:
+        print(f"No external experiments in {args.ledger}.")
+        return 0
+    print(f"External experiments in {args.ledger}:")
+    for r in rows:
+        print(
+            f"  {r['request_id']}  {r['status']:<8} {r['class']:<14} "
+            f"target={r['target'] or '-'}  result={r['result'] or 'awaiting'}"
+        )
+    return 0
+
+
+def _cmd_ingest_external_result(args: argparse.Namespace) -> int:
+    """Attach a signed external result to a live approval (human-operated; never an agent)."""
+    gate = _external_gate(args)
+    results = ExternalResultLedger(args.results)
+    try:
+        record = ingest_external_result(
+            gate,
+            results,
+            args.request_id,
+            status=ExternalResultStatus(args.status),
+            primary=args.primary,
+            passed=not args.failed and args.status == ExternalResultStatus.OK.value,
+            secondary=json.loads(args.secondary) if args.secondary else None,
+            operator_id=args.operator,
+            provenance=args.provenance,
+            reason=args.reason,
+            signature=args.signature,
+            signing_key=args.signing_key,
+        )
+    except ExternalResultRejected as exc:
+        print(f"REJECTED external result: {exc.reason}")
+        print(f"  logged to {args.results} (result {exc.record.result_id})")
+        return 2
+    print(f"INGESTED external result {record.result_id} ({record.status.value})")
+    print(f"  request {record.request_id}  decision {record.decision_id}")
+    print(f"  {record.primary_name}={record.primary:g}  passed={record.passed}")
+    print(f"  operator {record.operator_id}  provenance={record.provenance or '-'}")
+    print(f"Recorded to {args.results}.")
+    return 0
+
+
+def _cmd_external_audit(args: argparse.Namespace) -> int:
+    gate = _external_gate(args)
+    results = ExternalResultLedger(args.results)
+    requests = [
+        r for r in gate.ledger.requests() if r.action is GovernedAction.EXTERNAL_EXPERIMENT
+    ]
+    if args.request_id:
+        requests = [r for r in requests if r.request_id == args.request_id]
+    trail = []
+    for req in requests:
+        decisions = [d for d in gate.ledger.decisions() if d.request_id == req.request_id]
+        trail.append(
+            {
+                "request": req.model_dump(mode="json"),
+                "status": gate.status_of(req.request_id),
+                "decisions": [d.model_dump(mode="json") for d in decisions],
+                "results": [r.model_dump(mode="json") for r in results.for_request(req.request_id)],
+            }
+        )
+    print(json.dumps({"external_experiments": trail}, indent=2, sort_keys=True, default=str))
     return 0
 
 
@@ -1677,6 +1823,76 @@ def build_parser() -> argparse.ArgumentParser:
         "--config", type=Path, default=None, help="Tier config with policies/operators."
     )
     p_packet.set_defaults(func=_cmd_export_governance_packet)
+
+    # --- governed external experiments (Tier 2, Goal 26) -------------------
+    p_ext_propose = sub.add_parser(
+        "propose-external-experiment",
+        help="Record a typed EXTERNAL_EXPERIMENT request for a candidate (Goal 26).",
+    )
+    p_ext_propose.add_argument("task_dir", type=Path, help="The Regime-C research task dir.")
+    p_ext_propose.add_argument(
+        "--candidate", type=Path, default=None, help="Candidate file (defaults to the baseline)."
+    )
+    p_ext_propose.add_argument("--actor", default="", help="Who/what raised it (an agent or operator).")
+    p_ext_propose.add_argument("--rationale", default="", help="Why it is worth its cost.")
+    p_ext_propose.add_argument("--rollback-plan", default="", help="Rollback plan for the action.")
+    p_ext_propose.add_argument("--evidence", action="append", default=[], help="Evidence link; repeatable.")
+    p_ext_propose.add_argument("--ledger", type=Path, default=DEFAULT_APPROVALS_PATH)
+    p_ext_propose.add_argument("--config", type=Path, default=None)
+    p_ext_propose.set_defaults(func=_cmd_propose_external_experiment)
+
+    p_ext_list = sub.add_parser(
+        "list-external-experiments", help="List external-experiment requests + status (Goal 26)."
+    )
+    p_ext_list.add_argument("--ledger", type=Path, default=DEFAULT_APPROVALS_PATH)
+    p_ext_list.add_argument("--results", type=Path, default=DEFAULT_EXTERNAL_RESULTS_PATH)
+    p_ext_list.add_argument(
+        "--status",
+        default=None,
+        choices=["pending", "granted", "denied", "expired", "revoked"],
+        help="Only show requests in this resolved status.",
+    )
+    p_ext_list.add_argument("--config", type=Path, default=None)
+    p_ext_list.set_defaults(func=_cmd_list_external_experiments)
+
+    p_ext_ingest = sub.add_parser(
+        "ingest-external-result",
+        help="Attach a signed external result to a live approval (human-only).",
+    )
+    p_ext_ingest.add_argument("request_id", help="The approved request to attach a result to.")
+    p_ext_ingest.add_argument("--operator", required=True, help="Human operator id (required).")
+    p_ext_ingest.add_argument(
+        "--status",
+        choices=[s.value for s in ExternalResultStatus if s is not ExternalResultStatus.REJECTED],
+        default=ExternalResultStatus.OK.value,
+        help="Result class: ok / null / failed (null and failed are first-class negatives).",
+    )
+    p_ext_ingest.add_argument("--primary", type=float, default=0.0, help="Measured primary value.")
+    p_ext_ingest.add_argument(
+        "--failed", action="store_true", help="Mark the candidate as not passing the precondition."
+    )
+    p_ext_ingest.add_argument("--secondary", default="", help="JSON object of secondary metrics.")
+    p_ext_ingest.add_argument("--provenance", default="", help="Instrument id / notebook ref / run id.")
+    p_ext_ingest.add_argument("--reason", default="", help="Reason (required for null/failed results).")
+    p_ext_ingest.add_argument("--signature", default="", help="External signature over the result proof.")
+    p_ext_ingest.add_argument(
+        "--signing-key",
+        default=None,
+        help="Local development signing key used to create an HMAC proof; never stored.",
+    )
+    p_ext_ingest.add_argument("--ledger", type=Path, default=DEFAULT_APPROVALS_PATH)
+    p_ext_ingest.add_argument("--results", type=Path, default=DEFAULT_EXTERNAL_RESULTS_PATH)
+    p_ext_ingest.add_argument("--config", type=Path, default=None)
+    p_ext_ingest.set_defaults(func=_cmd_ingest_external_result)
+
+    p_ext_audit = sub.add_parser(
+        "external-audit", help="Show the external-experiment audit trail as JSON (Goal 26)."
+    )
+    p_ext_audit.add_argument("request_id", nargs="?", default=None, help="Limit to one request.")
+    p_ext_audit.add_argument("--ledger", type=Path, default=DEFAULT_APPROVALS_PATH)
+    p_ext_audit.add_argument("--results", type=Path, default=DEFAULT_EXTERNAL_RESULTS_PATH)
+    p_ext_audit.add_argument("--config", type=Path, default=None)
+    p_ext_audit.set_defaults(func=_cmd_external_audit)
 
     # --- governed compute scale-up (Tier 2, Goal 11) -----------------------
     p_scaled = sub.add_parser(

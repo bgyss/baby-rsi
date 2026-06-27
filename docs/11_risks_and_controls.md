@@ -138,3 +138,39 @@ Controls:
 - Safety/Evaluation review uses a different provider than implementation.
 - Mix providers for hypothesis generation to preserve diversity.
 - Treat cross-model disagreement on promotion as an escalation signal.
+
+## External-experiment risks (Regime C, Goal 26)
+
+When a science's ground truth is a real-world action — a wet-lab assay, a fabrication run,
+instrument time, paid HPC — the result must feed the loop without the execution plane ever
+reaching the outside world (`docs/18_generalizing_to_sciences.md`).
+
+### Risk: Autonomous real-world action
+
+An agent could try to trigger an irreversible, expensive physical action on its own authority.
+
+Controls:
+
+- The external step is the `EXTERNAL_EXPERIMENT` `GovernedAction`: default-deny, human-approved
+  under the Goal 19 identity / two-person rules, expiry and revocation honored.
+- No agent tool authorizes an experiment or attests a result; the human-operated CLI verbs
+  (`propose-external-experiment`, `ingest-external-result`) are the only path, and an
+  `agent:`-prefixed id is rejected at both approval and ingest.
+- The action happens entirely outside `siro`, under human authority; the execution plane runs
+  no part of it and holds no credentials or network handle for an instrument, lab, fab, or
+  paid-compute account.
+
+### Risk: Spoofed or replayed results
+
+A fabricated or stale result could try to promote a candidate that was never measured.
+
+Controls:
+
+- An ingested `ExternalResultRecord` is accepted only when bound by `governed_action_hash` to a
+  *live, matching* approval and carries a verifying operator signature; an unapproved, expired,
+  revoked, hash-mismatched, or unsigned result is logged `REJECTED` and never promotes.
+- The `external-oracle` evaluator re-checks approval liveness at read time, so a result whose
+  approval is later revoked or expires stops promoting its candidate.
+- Promotion is decided by the objective ingested metric under the Goal 24 reproducibility
+  policy, never by model judgment; null and failed results are recorded with reason, not
+  discarded, so expensive negatives stay first-class data.

@@ -36,6 +36,7 @@ class EvaluatorRegime(StrEnum):
     EXACT = "exact"
     SEEDED_DETERMINISTIC = "seeded-deterministic"
     STATISTICAL = "statistical"
+    EXTERNAL_ORACLE = "external-oracle"  # Regime C: metric is a human-mediated real-world result (Goal 26)
 
 
 class PackError(ValueError):

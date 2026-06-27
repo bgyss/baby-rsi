@@ -116,6 +116,10 @@ class ResearchTask:
     #: informational); a candidate cannot set it — it is read from the controller-owned
     #: ``task.json``.
     secondary_directions: dict[str, bool] = field(default_factory=dict)
+    #: Controller-owned external-experiment metadata for the ``external-oracle`` regime
+    #: (Goal 26): action class, proposal text, cost/risk envelope. Read from ``task.json``;
+    #: a candidate cannot set it. Empty for in-silico (Regime A/B) tasks.
+    external: dict = field(default_factory=dict)
 
     @property
     def allowed_surface(self) -> str:
@@ -177,6 +181,7 @@ def load_research_task(task_dir: str | Path, *, pack: DomainPack | None = None) 
         secondary_directions={
             str(k): bool(v) for k, v in (meta.get("secondary_directions") or {}).items()
         },
+        external=dict(meta.get("external") or {}),
     )
 
 
@@ -558,7 +563,11 @@ def research_reproducibility_gate(
         )
     # The exact regime demands bit-for-bit agreement; seeded-deterministic allows the
     # historical floating-point tolerance. Both reproduce existing behavior for current tasks.
-    tolerance = 0.0 if task.evaluator_regime is EvaluatorRegime.EXACT else REPRO_TOLERANCE
+    # ``exact`` and ``external-oracle`` demand bit-for-bit agreement: the external adapter
+    # re-reads the same signed, approved result, so two reads must agree exactly (and a
+    # candidate with no live result fails to produce a passing metric, never promoting).
+    exact_regimes = {EvaluatorRegime.EXACT, EvaluatorRegime.EXTERNAL_ORACLE}
+    tolerance = 0.0 if task.evaluator_regime in exact_regimes else REPRO_TOLERANCE
     runs = max(runs, 2)
     metrics = [run_research_eval(task, candidate_code, sandbox) for _ in range(runs)]
     if not all(m.passed and m.reproducible for m in metrics):

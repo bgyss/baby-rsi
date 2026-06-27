@@ -324,12 +324,15 @@
     {
       "number": 26,
       "title": "Governed external-experiment boundary",
-      "status": "specified",
+      "status": "implemented",
       "category": "Generalization to the Sciences",
       "prompt_path": "docs/goal_prompts/goal_26_governed_external_experiment.md",
       "artifacts": [
-        "src/siro/governance.py",
-        "src/siro/schemas.py"
+        "src/siro/external.py",
+        "src/siro/schemas.py",
+        "src/siro/research.py",
+        "src/siro/cli.py",
+        "tests/test_external_experiment.py"
       ],
       "summary": "Adds an EXTERNAL_EXPERIMENT GovernedAction and a propose → approve → execute → ingest lifecycle so Regime-C sciences (wet-lab, fabrication, instruments, paid compute) feed signed, human-approved results back into the loop while the execution plane never reaches the outside world."
     },
