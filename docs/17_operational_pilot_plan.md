@@ -17,11 +17,11 @@ also snapshots the exact tier/provider configs under `runs/pilots/operational-pi
 
 The fixed task set is:
 
-- `tasks/research/algorithm/pair_count`
-- `tasks/research/training/tiny_mlp`
-- `tasks/research/policy/sentiment_rules`
-- `tasks/research/data_cleaning/normalize_emails`
-- `tasks/research/parser_validator/slug_validator`
+- `packs/ml/tasks/algorithm/pair_count`
+- `packs/ml/tasks/training/tiny_mlp`
+- `packs/ml/tasks/policy/sentiment_rules`
+- `packs/ml/tasks/data_cleaning/normalize_emails`
+- `packs/ml/tasks/parser_validator/slug_validator`
 
 Do not edit task evaluators, hidden data, gates, or promotion rules during a pilot. A change
 to any of those inputs stops the current pilot and requires a new plan.

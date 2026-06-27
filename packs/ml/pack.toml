@@ -1,0 +1,6 @@
+id = "ml"
+title = "Machine-learning and software research benchmark pack"
+version = "1.0.0"
+evaluator_regime = "seeded-deterministic"
+required_tools = ["read_allowed_file", "query_memory", "list_references", "propose_patch"]
+tier_floor = 0

@@ -1,0 +1,11 @@
+id = "chip"
+title = "Chip-design pack (RTL synthesis + formal equivalence)"
+version = "1.0.0"
+# PPA (area/delay) from synthesis is a Regime-B metric: deterministic for pure logic
+# synthesis today, noisy once a placement/route backend is added. The pack declares the
+# statistical regime so the Goal 24 confidence-bound gate governs PPA promotion either way;
+# it degenerates to an exact decision for a zero-variance metric (a real area win promotes,
+# a no-change does not).
+evaluator_regime = "statistical"
+required_tools = ["read_allowed_file", "query_memory", "list_references", "propose_patch"]
+tier_floor = 0

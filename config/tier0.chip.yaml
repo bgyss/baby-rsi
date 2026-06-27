@@ -1,0 +1,29 @@
+# Tier 0 with the chip-design pack selected.
+# Requires a pinned offline EDA toolchain on PATH (yosys, and sby for heavier proofs);
+# candidate synthesis and equivalence checking run fully offline in the sandbox.
+tier: 0
+pack: chip
+
+providers:
+  local:
+    backend: llamacpp
+    base_url: http://127.0.0.1:2276/v1
+    name: unsloth/Qwen3.6-27B-GGUF:Q8_0
+    timeout_seconds: 120
+
+agent_models:
+  default: local
+
+sandbox:
+  timeout_seconds: 30
+  network: disabled
+  max_attempts_per_task: 20
+
+evaluation:
+  primary_metric: area_cells
+  require_reproducibility: true
+
+safety:
+  allow_network: false
+  allow_package_install: false
+  allow_evaluator_edits: false

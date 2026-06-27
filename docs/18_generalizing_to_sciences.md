@@ -1,11 +1,14 @@
 # Generalizing the Framework to the Sciences
 
-This is a **design exploration**, not a built contract. It proposes how `siro` — today
+This is a design exploration with the first packaging step now built. It proposes how `siro` — today
 exercised on ML/software self-improvement — generalizes into a domain-agnostic research
 organization that can run the same bounded, auditable loop over mathematics, chip design,
 the physical sciences, drug discovery, and the life sciences. It motivates a small set of
-future goal prompts (sketched in [Staging](#staging)); nothing here changes what is
-implemented until those goals land.
+future goal prompts (sketched in [Staging](#staging)); the Goal 22 domain-pack interface,
+the Goal 23 mathematics pack, the Goal 24 statistical reproducibility gate (Regime B), and the
+Goal 25 chip-design pack (Regime A correctness + Regime B PPA), the Goal 26 governed
+external-experiment boundary (Regime C), and the Goal 27 drug/life-science capstone (two-stage
+Regime B screening + Regime C confirmation) have all landed.
 
 The thesis: **the core loop is already domain-agnostic, and the work is not a rewrite — it
 is hardening four existing seams and generalizing two gates.** The non-negotiable invariants
@@ -24,7 +27,7 @@ execution plane runs candidates offline, [`01`](01_system_architecture.md)) is g
 
 The coupling to ML/software lives in exactly **four swappable seams**:
 
-1. **Seeded task families** — `tasks/research/{algorithm,training,policy,...}/`. These happen
+1. **Seeded task families** — `packs/ml/tasks/{algorithm,training,policy,...}/`. These happen
    to be in-silico Python; nothing requires that.
 2. **The evaluator contract** — each task's `eval.py` prints a JSON `MetricRecord` on its last
    stdout line, run inside the offline sandbox (`Sandbox.run_research`, `siro.research`). This
@@ -60,14 +63,16 @@ mechanism rather than inventing a new one — and the execution plane stays offl
 - **Mathematics (Regime A).** Candidate = a proof term or a construction; `eval.py` = run a
   proof checker (Lean `lake build`, Coq, Isabelle) on the candidate against a fixed theorem
   statement and emit pass/fail plus secondary metrics (proof length, dependency count). Fully
-  deterministic and offline. The cleanest possible first non-ML domain — it stresses only the
-  domain-pack interface and nothing else.
+  deterministic and offline. The initial `packs/math/` implementation uses Lean/Lake, hidden
+  theorem checks, and exact reruns to stress only the domain-pack interface and nothing else.
 - **Chip design (Regime A → B).** Candidate = RTL/HDL or a synthesis recipe; evaluator = an
   open-source EDA flow. Correctness via formal equivalence against a reference (Regime A);
   power/performance/area via synthesis (Regime B — tool runtime is noisy, so promote on a
   stable proxy or a confidence bound). The edit-surface / read-only-evaluator invariants map
   directly onto "the candidate may edit the design, never the testbench or the equivalence
-  reference."
+  reference." Implemented in Goal 25 as `packs/chip/`: an offline Yosys flow proves equivalence
+  (miter + SAT) against a controller-owned reference and reports synthesized cell count as the
+  area metric under the Goal 24 statistical gate; `yosys`/`sby` are pinned by nix.
 - **Physical sciences (Regime B, sometimes C).** Computational/theoretical physics — numerical
   simulation, symbolic derivation checked against a reference solver — fits Regime B. Bench
   experimental physics is Regime C.
@@ -76,14 +81,22 @@ mechanism rather than inventing a new one — and the execution plane stays offl
   with surrogate models shipped as fixtures. The actual ground truth — does the molecule bind,
   is it non-toxic — is a wet-lab assay, Regime C, and must route through governance. This is the
   canonical two-stage science: cheap in-silico proposal ranking, then a small number of
-  human-approved expensive confirmations.
+  human-approved expensive confirmations. **Implemented in Goal 27** as `packs/life_science/`: a
+  `screening` family (Regime B, an offline surrogate `eval.py` scoring predicted affinity with
+  drug-likeness and synthesizability as hard preconditions, promoted under the Goal 24 gate) and a
+  `confirmation` family (Regime C, the Goal 26 `external-oracle` adapter). `propose_confirmation`
+  (`src/siro/life_science.py`) enforces screening-before-confirmation: a costly, irreversible
+  assay is proposed only for a candidate that cleared the screen, so confirmations stay few and
+  high-value. The pack carries two regimes in one reviewable unit by letting a `confirmation`
+  task override its regime to `external-oracle` in `task.json`; the pack's dispatching evaluator
+  routes each task to the screening or confirmation adapter.
 
 ## What needs to be built — two seam-hardenings and one extension
 
 ### 1. A formal domain-pack interface (hardening seams 1–3)
 
-Promote the implicit "`eval.py` prints JSON" convention into a typed, registrable
-**`EvaluatorAdapter`**, and bundle everything domain-specific into a **domain pack**:
+Goal 22 promotes the implicit "`eval.py` prints JSON" convention into a typed, registrable
+**`EvaluatorAdapter`**, and bundles everything domain-specific into a **domain pack**:
 
 ```
 packs/<domain>/
@@ -95,41 +108,59 @@ packs/<domain>/
   tools.allow          # the per-domain control-plane tool whitelist
 ```
 
-The core loop *imports a pack*; it never hardcodes a domain. "Add a science" becomes "ship a
-pack," reviewed as a unit. The adapter declares its regime so the controller knows which
-reproducibility policy (below) to apply. This is the single most leveraged change — it is mostly
-refactoring the seam that already exists. The current ML families become `packs/ml/`, proving
-the interface against known-good behavior before any new science is added.
+The core loop loads a pack by config (`pack: ml` by default); it never hardcodes a domain.
+"Add a science" becomes "ship a pack," reviewed as a unit. The adapter declares its regime so
+the controller knows which reproducibility policy (below) to apply. The current ML families now
+live in `packs/ml/`, proving the interface against known-good behavior before any new science is
+added. A pack's `tools.allow` may narrow the control-plane toolset but cannot grant tools outside
+the global allowlist.
 
-### 2. Generalize the reproducibility / promotion gate (exact → statistical)
+### 2. Generalize the reproducibility / promotion gate (exact → statistical) — implemented (Goal 24)
 
-Today promotion requires near-bit-exact rerun agreement (`REPRO_TOLERANCE = 1e-9` in
-`siro.research`). Regime B needs a spectrum, selected by the pack's declared regime:
+Promotion previously required near-bit-exact rerun agreement (`REPRO_TOLERANCE = 1e-9` in
+`siro.research`). Goal 24 generalized this into a spectrum, selected by the pack's declared
+regime:
 
-- **exact** — proof checkers, formal equivalence (Regime A): reruns must agree exactly.
-- **seeded-deterministic** — the current behavior (seeded in-silico).
-- **statistical** — promote only if the oriented gain over the incumbent clears a confidence
-  bound across N seeded reruns; a lucky or noisy win cannot promote.
+- **exact** — proof checkers, formal equivalence (Regime A): reruns must agree bit-for-bit.
+- **seeded-deterministic** — the prior behavior (seeded in-silico) within `REPRO_TOLERANCE`.
+- **statistical** — the candidate and incumbent are scored across N **fixed seeded replicates**
+  (paired on the same seed via `SIRO_EVAL_SEED`), and the candidate promotes only if a
+  direction-aware **confidence interval** on the primary-metric delta excludes zero; a lucky or
+  noisy win cannot promote. Declared secondaries are checked the same way.
 
-This is a contained change to `research_improves` / `research_reproducibility_gate`. The
-invariant "no promotion on noise" is preserved — it is generalized, not relaxed. Human approval
-is still required to widen any benchmark or budget.
+`research_improves` / `research_reproducibility_gate` now dispatch on the declared regime; the
+`StatisticalPolicy` (seeds, N, confidence) is a controller/config bound a candidate cannot set
+or read, and the seeds + computed interval are recorded on the attempt so the noisy *decision*
+is itself reproducible. The invariant "no promotion on noise" is preserved — generalized, not
+relaxed. Human approval is still required to widen N, the confidence level, the seed policy, or
+any benchmark or budget. This unlocks **Regime B** for every pack that follows.
 
 ### 3. A governed external-experiment boundary (Regime C)
 
-Add a clean lifecycle `propose → approve → execute (human / robotic) → ingest`:
+**Implemented in Goal 26** (`src/siro/external.py`). A clean lifecycle
+`propose → approve → execute (human / instrument) → ingest`:
 
 - The org still only *reasons and proposes*; the execution plane stays offline.
-- The external step is a new `GovernedAction` variant (e.g. `EXTERNAL_EXPERIMENT` with a typed
-  payload: assay, fab submit, instrument run), authorized through the existing approval ledger
-  and compute-budget tiers ([`11`](goal_prompts/goal_11_governed_compute_scaleup.md)).
-- A human (or an instrument under human authority) executes the approved action and returns a
-  **signed result record**; the controller ingests it as the metric for that candidate.
-- Negative results are first-class, exactly as in-silico negatives are.
+- The external step is the `EXTERNAL_EXPERIMENT` `GovernedAction` with a typed
+  `ExternalExperimentSpec` payload (action class — assay / fabrication / instrument /
+  external-compute — the exact proposal, and the cost/risk envelope), authorized through the
+  existing approval ledger and compute-budget tiers
+  ([`11`](goal_prompts/goal_11_governed_compute_scaleup.md)) under the Goal 19 identity rules.
+  No agent tool authorizes it; default-deny, expiry, and revocation are honored.
+- A human (or an instrument under human authority) executes the approved action **outside**
+  `siro` and returns a **signed `ExternalResultRecord`** bound to the live approval; the
+  controller validates the binding and ingests it as the candidate's `MetricRecord`.
+- The Regime-C `EvaluatorAdapter` (`ExternalOracleAdapter`, regime `external-oracle`) scores a
+  candidate on the ingested, approved, signed result instead of running code, and promotes only
+  when a live, matching result resolves — an unapproved / expired / revoked / hash-mismatched /
+  unsigned result is logged `REJECTED` and never promotes.
+- Negative and null results are first-class, exactly as in-silico negatives are.
 
 Every invariant holds: no candidate code touches the network or an instrument; the irreversible,
 expensive action is human-approved and bound to the exact proposal via `governed_action_hash`;
-the audit trail is end-to-end.
+the audit trail (request → decision → signed result, and every rejection) is end-to-end. Human
+CLI verbs drive it: `propose-external-experiment`, `list-external-experiments`,
+`ingest-external-result`, `external-audit`.
 
 The agent org itself needs **no structural change** for any of this — only different prompts,
 tools, and references per pack.
@@ -141,14 +172,19 @@ riskiest machinery comes only after the cheapest domain has proven the seam. Eac
 prompt carries its own `## Self-improvement` section, per the [`13`](13_self_improvement_loop.md)
 contract — the outer meta-loop improves *how packs propose and select*, bounded identically.
 
-1. **Domain-pack interface + `EvaluatorAdapter`** — refactor only; reseat the existing ML
-   families as `packs/ml/`. No new science.
-2. **First non-ML pack: mathematics via Lean** — pure Regime A. Validates the whole
-   generalization while stressing zero new gates.
-3. **Statistical reproducibility gate** — unlocks Regime B.
-4. **Chip-design pack** — Yosys / OpenROAD; Regime A correctness + Regime B PPA.
-5. **Governed external-experiment boundary** — the Regime-C `GovernedAction` lifecycle.
-6. **Drug / life-science pack** — in-silico screening on (3), wet-lab confirmation on (5).
+1. **Domain-pack interface + `EvaluatorAdapter`** — implemented in Goal 22; refactor only;
+   reseats the existing ML families as `packs/ml/`. No new science.
+2. **First non-ML pack: mathematics via Lean** — implemented in Goal 23; pure Regime A with
+   hidden theorem checks, `lake build`, and proof-length/dependency metrics.
+3. **Statistical reproducibility gate** — implemented in Goal 24; unlocks Regime B (confidence
+   bound across fixed seeded replicates).
+4. **Chip-design pack** — implemented in Goal 25; offline Yosys equivalence (Regime A
+   correctness) + synthesis area (Regime B PPA) under the statistical gate.
+5. **Governed external-experiment boundary** — implemented in Goal 26; the Regime-C
+   `EXTERNAL_EXPERIMENT` `GovernedAction` propose → approve → execute → ingest lifecycle with a
+   signed, hash-bound result and the `external-oracle` evaluator adapter.
+6. **Drug / life-science pack** — implemented in Goal 27; in-silico screening on (3), wet-lab
+   confirmation on (5), with screening-before-confirmation gating the costly assays.
 
 ## Invariants this exploration must not break
 

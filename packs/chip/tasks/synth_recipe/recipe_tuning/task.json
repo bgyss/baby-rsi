@@ -1,0 +1,8 @@
+{
+  "family": "synth_recipe",
+  "objective": "Tune the synthesis recipe (an ordered list of Yosys optimization passes) so a fixed design synthesizes to fewer generic cells, while the result stays formally equivalent to the controller-owned reference.",
+  "edit_surface": "recipe.txt",
+  "primary_metric": "area_cells",
+  "higher_is_better": false,
+  "budget_seconds": 25.0
+}

@@ -13,7 +13,7 @@ Depends on Goals 04, 05, 09, 14.
 
 ## Requirements
 
-- Expand `tasks/research/` to at least 10 tasks per existing family:
+- Expand `packs/ml/tasks/` to at least 10 tasks per existing family:
   - algorithm,
   - training,
   - policy.

@@ -47,7 +47,7 @@ research task shape and `Sandbox.run_research`), and 13 (the docs consistency co
 - **A pack registry / loader.** `load_pack(id)` discovers and validates a pack, and the
   controller/orchestrator select a pack by **config only** (a `pack:` key in `config/tierN.*.yaml`),
   never by hardcoding. An unknown or malformed pack fails closed with a clear error.
-- **Reseat the ML families as `packs/ml/`.** Move the existing `tasks/research/{algorithm,
+- **Reseat the ML families as `packs/ml/`.** Move the existing `packs/ml/tasks/{algorithm,
   training,policy,...}` families and their evaluators under a built-in `ml` pack, with the default
   config selecting it, so existing commands and results are unchanged. This is the conformance
   test for the interface.

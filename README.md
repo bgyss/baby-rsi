@@ -19,7 +19,8 @@ mise run test
 uv run siro --help
 uv run siro --json summarize-research
 uv run siro --dry-run run-scaled --compute-tier 1
-uv run siro run-research tasks/research/training/tiny_mlp --config config/tier0.local.yaml
+uv run siro run-research packs/ml/tasks/training/tiny_mlp --config config/tier0.local.yaml
+uv run siro run-research packs/math/tasks/lemma/add_zero --config config/tier0.math.yaml
 ```
 
 Canonical interface: `uv run siro ...`. `mise` tasks are thin wrappers.
@@ -60,12 +61,13 @@ task -> propose -> sandbox -> evaluate -> archive -> select -> remember
 | 1 | Frontier-model research org | provider allowlist only | cross-model review |
 | 2 | Governed scale-up | provider allowlist only | human approvals |
 
-Tier selection is config-only (`config/tier0.local.yaml`, `config/tier1.frontier.yaml`,
-`config/tier2.governed.yaml`). Lowering tier must not require a code change.
+Tier and pack selection are config-only (`config/tier0.local.yaml`, `config/tier1.frontier.yaml`,
+`config/tier2.governed.yaml`, plus pack-specific profiles such as `config/tier0.math.yaml`).
+Lowering tier must not require a code change.
 
 ## Implementation Status
 
-Goals 01-21 are implemented; Goals 22-27 are specified, not yet implemented. Keep this
+Goals 01-27 are implemented. Keep this
 section grouped by tier; put detailed notes in
 [`docs/implementation_status.md`](docs/implementation_status.md).
 
@@ -90,7 +92,7 @@ section grouped by tier; put detailed notes in
   clients behind one interface, role binding by config, token/USD ceilings, call ledger.
 - **Goal 08 — Frontier research org** (orchestrator, agents, tools): model-backed roles,
   control-plane-only tools, cross-model safety review, config-only Tier 1 to Tier 0 fallback.
-- **Goal 09 — Research-shaped task suite** (research, tasks/research): algorithm, training,
+- **Goal 09 — Research-shaped task suite** (research, packs/ml/tasks): algorithm, training,
   and policy task families with controller-owned evaluators and hidden-data isolation.
 
 ### Tier 2 — Governed Scale-Up (Goals 10-12)
@@ -112,7 +114,7 @@ section grouped by tier; put detailed notes in
   optional Linux cgroup v2 enforcement.
 - **Goal 16 — Durable research store and query layer** (storage): JSONL default plus opt-in
   SQLite with migrations, dedupe, hash chains, import, and export.
-- **Goal 17 — Research benchmark suite expansion** (tasks/research): broader fixed suite,
+- **Goal 17 — Research benchmark suite expansion** (packs/ml/tasks): broader fixed suite,
   adversarial variants, hidden data, and richer summaries.
 - **Goal 18 — Provider operations and observability** (providers/ops): classified errors,
   bounded retries, request metadata, and `provider-report`.
@@ -128,27 +130,49 @@ section grouped by tier; put detailed notes in
   repo-local skills drive the non-interactive CLI; global `--json` and `--dry-run` support
   precise summaries and previews without side effects.
 
-### Generalization to the Sciences (Goals 22-27 — specified, not yet implemented)
+### Generalization to the Sciences (Goals 22-27)
 
 See [`docs/18_generalizing_to_sciences.md`](docs/18_generalizing_to_sciences.md) for the
 evaluator-regime taxonomy and design rationale behind these goals.
 
 - **Goal 22 — Domain-pack interface and evaluator adapter** (packs, packs/ml): formalizes the
   task/evaluator convention into a typed `EvaluatorAdapter` plus a config-selected domain-pack
-  layout; reseats the ML families as `packs/ml/`. Refactor only — no new domain.
-- **Goal 23 — Mathematics proof-search pack (Lean)** (packs/math): first non-ML pack — a
-  Regime-A domain scored by an offline Lean proof checker, theorem statement read-only to agents.
+  layout; `packs/ml/` is the built-in default pack and preserves existing ML research behavior.
+- **Goal 23 — Mathematics proof-search pack (Lean)** (packs/math): first non-ML pack; exact
+  Regime-A proof tasks run a controller-owned `lake build` evaluator with hidden theorem checks,
+  proof-length/dependency metrics, and math-specific prompt/reference surfaces.
 - **Goal 24 — Statistical reproducibility gate** (research): generalizes the promotion gate to
-  exact / seeded-deterministic / statistical, promoting noisy evaluators only on a confidence
-  bound — unlocks Regime B without relaxing "no promotion on noise".
-- **Goal 25 — Chip-design pack** (packs/chip): RTL/synthesis candidates gated by offline formal
-  equivalence (Regime A) with a synthesis PPA objective promoted under the statistical gate.
-- **Goal 26 — Governed external-experiment boundary** (governance, schemas): an
-  `EXTERNAL_EXPERIMENT` GovernedAction and propose → approve → execute → ingest lifecycle so
-  Regime-C sciences feed signed, human-approved results back without the execution plane reaching
-  the outside world.
-- **Goal 27 — Drug and life-science pack** (packs/life_science): two-stage capstone — offline
-  in-silico screening (Regime B) gates a few human-approved wet-lab confirmations (Regime C).
+  `exact` / `seeded-deterministic` / `statistical`, the last promoting noisy evaluators only when
+  the oriented gain clears a confidence bound across fixed seeded replicates — unlocks Regime B
+  without relaxing "no promotion on noise". Seeds, replicate count, and confidence are
+  controller-owned, recorded on the attempt, and unreachable by a candidate.
+- **Goal 25 — Chip-design pack** (packs/chip): RTL/synthesis candidates scored by an offline
+  Yosys flow — a formal-equivalence proof against a controller-owned reference (Regime A) gates a
+  synthesis area objective (Regime B) promoted under the Goal 24 statistical gate. A
+  non-equivalent design never promotes; the candidate edits only its declared design surface
+  (RTL or an allowlisted synthesis recipe), with the reference held out. Selected by
+  `config/tier{0,1}.chip.yaml`.
+- **Goal 26 — Governed external-experiment boundary** (external, schemas): an
+  `EXTERNAL_EXPERIMENT` GovernedAction with a propose → approve → execute → ingest lifecycle so
+  Regime-C sciences (wet-lab assays, fabrication, instruments, paid compute) feed signed,
+  human-approved results back into the loop while the execution plane never reaches the outside
+  world. An `ExternalOracleAdapter` scores a candidate on the ingested, approved, signed result
+  instead of running code; a result promotes only when bound (by `governed_action_hash`) to a
+  live, matching approval — an unapproved / expired / revoked / hash-mismatched / unsigned
+  result is rejected and logged. CLI: `propose-external-experiment`, `list-external-experiments`,
+  `ingest-external-result`, `external-audit`.
+- **Goal 27 — Drug and life-science pack** (packs/life_science, life_science): two-stage capstone
+  combining both new regimes on one life-science workflow. Cheap offline **in-silico screening**
+  (Regime B — pinned surrogate docking/ADMET/synthesizability proxies in `hidden/`) ranks
+  candidate molecules and promotes under the Goal 24 statistical gate; drug-likeness and
+  synthesizability are hard preconditions, so a candidate that inflates predicted affinity by
+  stacking lipophilic groups fails outright. A screened candidate may then be **proposed** (never
+  agent-authorized) for a rare, governed **wet-lab confirmation** (Regime C via the Goal 26
+  boundary): promotion to *confirmed* requires an ingested, signed assay result bound to a live
+  human approval — never an in-silico score. `propose_confirmation` enforces
+  screening-before-confirmation so costly, irreversible assays stay few and high-value; the
+  execution plane runs no synthesis or assay and holds no lab credentials. Selected by
+  `config/tier{0,1}.life_science.yaml`.
 
 ## Document Map
 

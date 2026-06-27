@@ -7,6 +7,7 @@
 # or 0 and the governed capabilities are simply not offered (with no approvals on record,
 # everything default-denies — a lower tier is always safe).
 tier: 2
+pack: ml
 
 providers:
   local:

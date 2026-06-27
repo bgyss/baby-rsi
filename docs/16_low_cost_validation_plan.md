@@ -105,7 +105,7 @@ Commands:
 
 ```zsh
 UV_CACHE_DIR=.uv-cache uv run siro --help
-UV_CACHE_DIR=.uv-cache uv run siro run-scaled tasks/research/training/tiny_mlp --compute-tier 0
+UV_CACHE_DIR=.uv-cache uv run siro run-scaled packs/ml/tasks/training/tiny_mlp --compute-tier 0
 UV_CACHE_DIR=.uv-cache uv run siro summarize-research runs/research_attempts.jsonl
 ```
 
@@ -135,7 +135,7 @@ mise run serve-model
 Run a single research task with the Tier 0 config:
 
 ```zsh
-UV_CACHE_DIR=.uv-cache uv run siro run-research tasks/research/algorithm/pair_count \
+UV_CACHE_DIR=.uv-cache uv run siro run-research packs/ml/tasks/algorithm/pair_count \
   --config config/tier0.local.yaml \
   --objective "Improve the task against its objective metric."
 ```
@@ -184,7 +184,7 @@ budget:
 Command:
 
 ```zsh
-UV_CACHE_DIR=.uv-cache uv run siro run-research tasks/research/algorithm/pair_count \
+UV_CACHE_DIR=.uv-cache uv run siro run-research packs/ml/tasks/algorithm/pair_count \
   --config config/tier1.frontier.yaml \
   --objective "Improve count_pairs while preserving correctness."
 ```
@@ -248,7 +248,7 @@ Purpose:
 Run default tier:
 
 ```zsh
-UV_CACHE_DIR=.uv-cache uv run siro run-scaled tasks/research/training/tiny_mlp \
+UV_CACHE_DIR=.uv-cache uv run siro run-scaled packs/ml/tasks/training/tiny_mlp \
   --compute-tier 0 \
   --experiment-id local-scale-rehearsal
 ```
@@ -278,7 +278,7 @@ UV_CACHE_DIR=.uv-cache uv run siro approve <request_id> --by <human-id>
 Run the governed tier:
 
 ```zsh
-UV_CACHE_DIR=.uv-cache uv run siro run-scaled tasks/research/training/tiny_mlp \
+UV_CACHE_DIR=.uv-cache uv run siro run-scaled packs/ml/tasks/training/tiny_mlp \
   --compute-tier 1 \
   --experiment-id local-scale-rehearsal
 ```

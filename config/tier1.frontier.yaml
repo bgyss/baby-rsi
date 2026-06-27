@@ -2,6 +2,7 @@
 # The execution plane stays offline at every tier; only the control plane may
 # reach allow-listed model-provider endpoints. See docs/07_model_providers_and_tiers.md.
 tier: 1
+pack: ml
 
 providers:
   local:

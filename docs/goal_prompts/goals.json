@@ -112,7 +112,7 @@
       "prompt_path": "docs/goal_prompts/goal_09_research_task_suite.md",
       "artifacts": [
         "src/siro/research.py",
-        "tasks/research/"
+        "packs/ml/tasks/"
       ],
       "summary": "Adds research tasks, objective evaluation harnesses, reproducibility checks, and per-family summaries."
     },
@@ -209,7 +209,7 @@
       "category": "Cross-tier hardening",
       "prompt_path": "docs/goal_prompts/goal_17_benchmark_suite_expansion.md",
       "artifacts": [
-        "tasks/research/",
+        "packs/ml/tasks/",
         "src/siro/research.py"
       ],
       "summary": "Expands the fixed benchmark suite across existing and new families with adversarial variants and richer per-family summaries."
@@ -272,7 +272,7 @@
     {
       "number": 22,
       "title": "Domain-pack interface and evaluator adapter",
-      "status": "specified",
+      "status": "implemented",
       "category": "Generalization to the Sciences",
       "prompt_path": "docs/goal_prompts/goal_22_domain_pack_interface.md",
       "artifacts": [
@@ -284,56 +284,71 @@
     {
       "number": 23,
       "title": "Mathematics proof-search pack (Lean)",
-      "status": "specified",
+      "status": "implemented",
       "category": "Generalization to the Sciences",
       "prompt_path": "docs/goal_prompts/goal_23_math_lean_pack.md",
       "artifacts": [
-        "packs/math/"
+        "packs/math/",
+        "config/tier0.math.yaml",
+        "config/tier1.math.yaml",
+        "tests/test_math_pack.py"
       ],
       "summary": "First non-ML pack: a Regime-A (formal/exact) mathematics domain whose evaluator is a Lean proof checker run offline; candidates are proofs scored by verification plus proof length/dependency count, with the theorem statement read-only to agents."
     },
     {
       "number": 24,
       "title": "Statistical reproducibility gate",
-      "status": "specified",
+      "status": "implemented",
       "category": "Generalization to the Sciences",
       "prompt_path": "docs/goal_prompts/goal_24_statistical_reproducibility_gate.md",
       "artifacts": [
-        "src/siro/research.py"
+        "src/siro/research.py",
+        "tests/test_statistical_gate.py"
       ],
       "summary": "Generalizes the reproducibility/promotion gate from exact rerun agreement to a regime spectrum (exact / seeded-deterministic / statistical), adding a noise-aware policy that promotes only when the oriented gain clears a confidence bound across fixed seeded reruns — unlocking Regime B without relaxing 'no promotion on noise'."
     },
     {
       "number": 25,
       "title": "Chip-design pack",
-      "status": "specified",
+      "status": "implemented",
       "category": "Generalization to the Sciences",
       "prompt_path": "docs/goal_prompts/goal_25_chip_design_pack.md",
       "artifacts": [
-        "packs/chip/"
+        "packs/chip/",
+        "config/tier0.chip.yaml",
+        "config/tier1.chip.yaml",
+        "tests/test_chip_pack.py"
       ],
       "summary": "Chip-design domain whose candidates are RTL/synthesis recipes: correctness via offline formal equivalence against a controller-owned reference (Regime A) gates a power/performance/area objective measured by synthesis (Regime B, promoted under the Goal 24 statistical gate)."
     },
     {
       "number": 26,
       "title": "Governed external-experiment boundary",
-      "status": "specified",
+      "status": "implemented",
       "category": "Generalization to the Sciences",
       "prompt_path": "docs/goal_prompts/goal_26_governed_external_experiment.md",
       "artifacts": [
-        "src/siro/governance.py",
-        "src/siro/schemas.py"
+        "src/siro/external.py",
+        "src/siro/schemas.py",
+        "src/siro/research.py",
+        "src/siro/cli.py",
+        "tests/test_external_experiment.py"
       ],
       "summary": "Adds an EXTERNAL_EXPERIMENT GovernedAction and a propose → approve → execute → ingest lifecycle so Regime-C sciences (wet-lab, fabrication, instruments, paid compute) feed signed, human-approved results back into the loop while the execution plane never reaches the outside world."
     },
     {
       "number": 27,
       "title": "Drug and life-science pack",
-      "status": "specified",
+      "status": "implemented",
       "category": "Generalization to the Sciences",
       "prompt_path": "docs/goal_prompts/goal_27_drug_life_science_pack.md",
       "artifacts": [
-        "packs/life_science/"
+        "packs/life_science/",
+        "src/siro/life_science.py",
+        "src/siro/research.py",
+        "config/tier0.life_science.yaml",
+        "config/tier1.life_science.yaml",
+        "tests/test_life_science_pack.py"
       ],
       "summary": "Capstone two-stage pack: cheap offline in-silico screening (Regime B, pinned surrogate fixtures) ranks candidates and gates a small number of human-approved wet-lab confirmations (Regime C via Goal 26); screening-before-confirmation keeps costly, irreversible assays few and high-value."
     }

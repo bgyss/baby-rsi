@@ -27,6 +27,14 @@
             llama-cpp      # local model server (llama-server) for the research loop;
                            # Tier 0 talks to an OpenAI-compatible llama.cpp endpoint.
                            # An external LlamaBarn server (127.0.0.1:2276) also works.
+            lean4          # Lean/Lake proof checker for the offline math pack.
+            yosys          # RTL synthesis + formal equivalence (miter/sat, equiv_*) for the
+                           # offline chip-design pack (Goal 25). Runs candidate-vs-reference
+                           # equivalence and PPA synthesis fully offline.
+            sby            # SymbiYosys — formal-property/equivalence front-end over yosys,
+                           # for heavier equivalence proofs in the chip pack.
+                           # NOTE: `eqy` (YosysHQ equivalence checker) is not yet packaged in
+                           # nixpkgs; the chip pack uses yosys built-in equivalence + sby.
             stdenv.cc      # C toolchain for any native Python wheels
             git
             jujutsu        # repo is versioned with git + jj

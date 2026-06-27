@@ -2,6 +2,7 @@
 # Same lifecycle and execution-plane isolation as config/tier1.frontier.yaml, but lower
 # per-run/day budget ceilings and cheaper provider bindings for Goal 20 measurement.
 tier: 1
+pack: ml
 
 providers:
   local:

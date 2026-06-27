@@ -1,0 +1,6 @@
+{
+  "check_file": "import Proof\n\nexample (p q : Prop) : p ∧ q -> q ∧ p := and_comm_candidate p q\n",
+  "theorem_name": "and_comm_candidate",
+  "required_type": "p ∧ q -> q ∧ p",
+  "expected_imports": []
+}

@@ -58,10 +58,15 @@ from .evaluator import evaluate
 from .gates import function_signatures, promotion_gate, static_gates
 from .memory import ResearchMemory, entry_from_attempt
 from .meta import forbidden_meta_change
+from .packs import DEFAULT_PACK_ID, DomainPack, EvaluatorRegime, load_pack
 from .providers.base import extract_code
 from .research import (
+    DEFAULT_STATISTICAL_POLICY,
     ResearchArchive,
     ResearchTask,
+    StatisticalAssessment,
+    StatisticalPolicy,
+    assess_statistical,
     entry_from_research_attempt,
     load_research_task,
     make_candidate,
@@ -170,7 +175,7 @@ class CycleResult:
 class ResearchCycleResult:
     """The full, auditable trace of one research-shaped cycle (Goal 09).
 
-    The analogue of :class:`CycleResult` for a ``tasks/research/`` task: the org ran the
+    The analogue of :class:`CycleResult` for a ``packs/ml/tasks/`` task: the org ran the
     full lifecycle and the task's own ``eval.py`` (not a model) decided promotion. Carries
     the typed :class:`MetricRecord` and the task ``family`` so the suite summary can report
     per family.
@@ -215,6 +220,8 @@ class Orchestrator:
         transport: "Transport | None" = None,
         retrieval_limit: int = 5,
         research_archive: ResearchArchive | None = None,
+        pack: DomainPack | None = None,
+        statistical_policy: StatisticalPolicy | None = None,
     ) -> None:
         # Use `is None` (not `or`): JSONLArchive/ResearchMemory are falsy when empty.
         self._agents = agents
@@ -232,6 +239,11 @@ class Orchestrator:
         self.retrieval_limit = retrieval_limit
         self._config = config
         self._transport = transport
+        self.pack = pack or load_pack(getattr(config, "pack", DEFAULT_PACK_ID))
+        # Fixed harness parameters for the statistical reproducibility regime (Goal 24):
+        # replicate seeds, confidence level, secondary tolerance. Controller-owned and never
+        # candidate-reachable; widening is a human-gated change.
+        self.statistical_policy = statistical_policy or DEFAULT_STATISTICAL_POLICY
 
     # --- construction from config ------------------------------------------
     @classmethod
@@ -268,7 +280,13 @@ class Orchestrator:
             config=config,
             transport=transport,
             research_archive=research_archive,
+            pack=load_pack(config.pack),
         )
+        if config.tier < orch.pack.manifest.tier_floor:
+            raise ValueError(
+                f"Pack {orch.pack.id!r} requires tier >= {orch.pack.manifest.tier_floor}, "
+                f"but config selects tier {config.tier}."
+            )
         orch._assert_cross_model_config(config)
         return orch
 
@@ -545,7 +563,9 @@ class Orchestrator:
                 memory=self.memory,
                 task_id=task.task_id,
                 allowed_surfaces=[task.allowed_surface],
-                references_path=self.references_path,
+                references_path=self._pack_references_path(),
+                allowed_tool_names=self.pack.tools,
+                prompts_dir=self.pack.prompts_dir,
                 transport=self._transport,
             )
         if self._agents is None:
@@ -561,7 +581,7 @@ class Orchestrator:
         The held-out data in ``hidden/`` reaches only ``eval.py``, never a prompt, and the
         static safety gate's no-file-I/O rule means a candidate cannot read it to leak it.
         """
-        task = load_research_task(task_dir)
+        task = load_research_task(task_dir, pack=self.pack)
         agents = self._agents_for_research_task(task)
         cross_model = agents[SAFETY].provider != agents[IMPLEMENTATION].provider
         if self.require_cross_model and not cross_model:
@@ -622,10 +642,25 @@ class Orchestrator:
         static_report = GateReport(results=static_gates(code, allowed_signatures=allowed_signatures))
 
         # 5. Execution plane — the task's fixed eval.py scores the seed and the candidate.
-        baseline_metric = run_research_eval(task, task.surface_code, self.sandbox)
+        #    A statistical-regime pack (Goal 24) scores both across the policy's fixed seeded
+        #    replicates so promotion can require the gain to clear a confidence bound; the
+        #    representative (first-seed) metrics still flow into the trace and archive.
         metric: MetricRecord | None = None
-        if triaged_in and static_report.passed:
-            metric = run_research_eval(task, code, self.sandbox)
+        assessment: StatisticalAssessment | None = None
+        if (
+            triaged_in
+            and static_report.passed
+            and task.evaluator_regime is EvaluatorRegime.STATISTICAL
+        ):
+            assessment = assess_statistical(
+                task, code, task.surface_code, self.sandbox, policy=self.statistical_policy
+            )
+            baseline_metric = assessment.baseline_metric
+            metric = assessment.candidate_metric
+        else:
+            baseline_metric = run_research_eval(task, task.surface_code, self.sandbox)
+            if triaged_in and static_report.passed:
+                metric = run_research_eval(task, code, self.sandbox)
 
         # 6. Evaluation Agent — narrate the metric move (objective record is authoritative).
         direction = "higher" if task.higher_is_better else "lower"
@@ -684,6 +719,7 @@ class Orchestrator:
             baseline_metric=baseline_metric,
             safety=safety,
             escalations=escalations,
+            assessment=assessment,
         )
 
         status = (
@@ -698,6 +734,9 @@ class Orchestrator:
             status=status,
             reason=reason,
             gates=report,
+            statistical=assessment.evidence if assessment is not None else None,
+            pack_id=task.pack_id,
+            pack_version=task.pack_version,
         )
         self.research_archive.append(attempt)
 
@@ -754,6 +793,7 @@ class Orchestrator:
         baseline_metric: MetricRecord,
         safety: AgentResult,
         escalations: list[str],
+        assessment: StatisticalAssessment | None = None,
     ) -> tuple[GateReport, GateDecision, str]:
         """Combine the objective metric gate with the cross-model safety review (Goal 09).
 
@@ -761,7 +801,13 @@ class Orchestrator:
         non-reproducible, or non-improving candidate is rejected outright. A passing,
         improving, reproducible candidate that the Safety reviewer flags is **escalated**,
         not promoted — disagreement is a signal, not a tie-break.
+
+        Both the improvement check and the reproducibility gate dispatch on the pack's declared
+        evaluator regime (Goal 24): for the ``statistical`` regime they consume the replicate
+        ``assessment`` so promotion requires the gain to clear a confidence bound, not just a
+        single-sample win.
         """
+        evidence = assessment.evidence if assessment is not None else None
         if not triaged_in:
             return static_report, GateDecision.FAILED, "triaged out before execution (duplicate)"
         if static_report.failed:
@@ -772,11 +818,13 @@ class Orchestrator:
                 GateDecision.FAILED,
                 "candidate did not produce a passing, reproducible metric",
             )
-        improved, why = research_improves(metric, baseline_metric)
+        improved, why = research_improves(
+            metric, baseline_metric, regime=task.evaluator_regime, evidence=evidence
+        )
         if not improved:
             return static_report, GateDecision.FAILED, f"no improvement over baseline ({why})"
 
-        repro = research_reproducibility_gate(task, code, self.sandbox)
+        repro = research_reproducibility_gate(task, code, self.sandbox, evidence=evidence)
         report = GateReport(results=[*static_report.results, repro])
         if report.failed:
             return report, GateDecision.FAILED, report.first_failure_reason()
@@ -874,9 +922,14 @@ class Orchestrator:
 
     def _references_text(self) -> str:
         try:
-            return Path(self.references_path).read_text(encoding="utf-8")[:2000]
+            return Path(self._pack_references_path()).read_text(encoding="utf-8")[:2000]
         except OSError:
             return "(reference set unavailable)"
+
+    def _pack_references_path(self) -> Path:
+        if self.pack.references_dir is not None:
+            return self.pack.references_dir / "references.md"
+        return Path(self.references_path)
 
     def _bottlenecks(self, task_id: str) -> str:
         modes = self.memory.top_failure_modes(limit=3, task_id=task_id)

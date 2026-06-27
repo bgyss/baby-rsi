@@ -1,0 +1,6 @@
+id = "math"
+title = "Formal mathematics proof-search pack"
+version = "1.0.0"
+evaluator_regime = "exact"
+required_tools = ["read_allowed_file", "query_memory", "list_references", "propose_patch"]
+tier_floor = 0

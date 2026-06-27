@@ -1,0 +1,8 @@
+{
+  "family": "proof_improvement",
+  "objective": "Keep the conjunction-commutativity proof verified while reducing proof length and dependencies.",
+  "edit_surface": "Proof.lean",
+  "primary_metric": "proof_verified",
+  "higher_is_better": true,
+  "budget_seconds": 5.0
+}

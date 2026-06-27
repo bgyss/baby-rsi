@@ -155,10 +155,13 @@ def _build_toolbox(
     task_id: str,
     allowed_surfaces: list[str | Path],
     references_path: str | Path,
+    allowed_tool_names: set[str] | frozenset[str] | None = None,
 ) -> Toolbox:
     """Assemble only the control-plane tools this role's spec allows — nothing more."""
     tools = []
     for name in spec.tool_names:
+        if allowed_tool_names is not None and name not in allowed_tool_names:
+            continue
         if name == "query_memory" and memory is not None:
             tools.append(query_memory_tool(memory, task_id=task_id))
         elif name == "read_allowed_file":
@@ -178,6 +181,8 @@ def build_agent(
     task_id: str = "",
     allowed_surfaces: list[str | Path] | None = None,
     references_path: str | Path = "docs/12_references.md",
+    allowed_tool_names: set[str] | frozenset[str] | None = None,
+    prompts_dir: str | Path | None = None,
 ) -> Agent:
     """Bind one role to a concrete model client, with its prompt, schema, and tools."""
     spec = ROLE_SPECS[role]
@@ -187,10 +192,14 @@ def build_agent(
         task_id=task_id,
         allowed_surfaces=allowed_surfaces or [],
         references_path=references_path,
+        allowed_tool_names=allowed_tool_names,
     )
+    prompt_dir = Path(prompts_dir) if prompts_dir is not None else None
+    if prompt_dir is not None and not (prompt_dir / f"{spec.prompt_name}.md").exists():
+        prompt_dir = None
     return Agent(
         role=role,
-        system_prompt=load_prompt(spec.prompt_name),
+        system_prompt=load_prompt(spec.prompt_name, prompts_dir=prompt_dir),
         output_schema=spec.output_schema,
         model=model,
         toolbox=toolbox,
@@ -205,6 +214,8 @@ def build_agents(
     task_id: str = "",
     allowed_surfaces: list[str | Path] | None = None,
     references_path: str | Path = "docs/12_references.md",
+    allowed_tool_names: set[str] | frozenset[str] | None = None,
+    prompts_dir: str | Path | None = None,
     transport: "Transport | None" = None,
 ) -> dict[str, Agent]:
     """Bind every model-backed role to the provider its config selects (tier-driven).
@@ -223,6 +234,8 @@ def build_agents(
             task_id=task_id,
             allowed_surfaces=allowed_surfaces,
             references_path=references_path,
+            allowed_tool_names=allowed_tool_names,
+            prompts_dir=prompts_dir,
         )
     return agents
 

@@ -1,0 +1,28 @@
+# Tier 0 with the formal mathematics pack selected.
+# Requires a pinned Lean/Lake toolchain on PATH for real proof checking.
+tier: 0
+pack: math
+
+providers:
+  local:
+    backend: llamacpp
+    base_url: http://127.0.0.1:2276/v1
+    name: unsloth/Qwen3.6-27B-GGUF:Q8_0
+    timeout_seconds: 120
+
+agent_models:
+  default: local
+
+sandbox:
+  timeout_seconds: 10
+  network: disabled
+  max_attempts_per_task: 20
+
+evaluation:
+  primary_metric: proof_verified
+  require_reproducibility: true
+
+safety:
+  allow_network: false
+  allow_package_install: false
+  allow_evaluator_edits: false

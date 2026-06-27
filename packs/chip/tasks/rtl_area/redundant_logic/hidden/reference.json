@@ -1,0 +1,4 @@
+{
+  "top": "top",
+  "golden": "module top(input a, input b, input c, output y);\n  assign y = (a & b) | (a & c);\nendmodule\n"
+}

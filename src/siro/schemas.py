@@ -138,6 +138,8 @@ class MemoryEntry(BaseModel):
     experiment_id: str
     source_experiment_id: str = ""
     task_id: str
+    pack_id: str = ""
+    pack_version: str = ""
     strategy: str = ""
     candidate_summary: str = ""
     score: float = 0.0
@@ -373,6 +375,38 @@ class MetricRecord(BaseModel):
         return self.primary if self.higher_is_better else -self.primary
 
 
+class StatisticalEvidence(BaseModel):
+    """Replicate-based promotion evidence for the ``statistical`` regime (Goal 24).
+
+    Packs whose evaluators are stochastic (numerical simulators, surrogate models, docking
+    scores) promote on a *confidence bound* across N seeded reruns rather than on bit-exact
+    agreement. This record makes the noisy decision **reproducible**: the seeds, replicate
+    count, confidence level, and the resulting direction-aware interval on the primary-metric
+    delta are all recorded, so re-running the gate on the same seeds yields the same
+    promotion decision even though any single metric is noisy.
+
+    The interval is oriented so *larger is always better* (the primary's
+    :meth:`MetricRecord.directional` value): ``primary_delta_low > 0`` means the candidate's
+    improvement over the incumbent clears the bound — a lucky or within-noise win does not
+    promote. ``replicates``, ``confidence``, and ``seeds`` are fixed harness parameters set by
+    the controller/config; a candidate can neither set nor read them.
+    """
+
+    regime: str = "statistical"
+    replicates: int
+    confidence: float
+    seeds: list[int] = Field(default_factory=list)
+    primary_name: str = "primary"
+    primary_delta_mean: float = 0.0
+    primary_delta_low: float = 0.0
+    primary_delta_high: float = 0.0
+    per_seed_primary_delta: list[float] = Field(default_factory=list)
+    secondary_within_bound: dict[str, bool] = Field(default_factory=dict)
+    reproducible: bool = False
+    promoted: bool = False
+    reason: str = ""
+
+
 class ResearchAttempt(BaseModel):
     """One archived research-task attempt — kept apart from code/training attempts (Goal 09).
 
@@ -381,17 +415,22 @@ class ResearchAttempt(BaseModel):
     so the suite summary can report per task family (algorithm / training / policy). Stored
     in ``runs/research_attempts.jsonl``; negative results — failed correctness, regressions,
     timeouts, gate rejections — are recorded with their ``status`` and ``reason``, never
-    discarded.
+    discarded. ``statistical`` carries the replicate seeds and confidence interval when the
+    pack's evaluator declares the ``statistical`` regime (Goal 24), so a noisy promotion stays
+    auditable and reproducible.
     """
 
     attempt_id: str
     task_id: str
     family: str = ""
+    pack_id: str = "ml"
+    pack_version: str = ""
     candidate: Candidate
     metric: MetricRecord | None = None
     status: AttemptStatus = AttemptStatus.REJECTED
     reason: str = ""
     gates: GateReport | None = None
+    statistical: StatisticalEvidence | None = None
     created_at: datetime = Field(default_factory=_utcnow)
 
 
@@ -484,6 +523,7 @@ class GovernedAction(str, Enum):
     AUTONOMOUS_INSTALL = "autonomous_install"
     MODEL_TRAIN = "model_train"  # run a weight-update experiment (Goal 12)
     MODEL_DEPLOY = "model_deploy"  # bind a trained model to an agent role (Goal 12)
+    EXTERNAL_EXPERIMENT = "external_experiment"  # a human-mediated real-world measurement (Goal 26)
     HIGH_RISK_ACTION = "high_risk_action"  # any other irreversible / high-budget action
 
 
@@ -615,6 +655,112 @@ class ApprovalRevocation(BaseModel):
     created_at: datetime = Field(default_factory=_utcnow)
 
 
+class ExternalExperimentClass(str, Enum):
+    """The class of real-world action an external experiment runs (Goal 26).
+
+    A Regime-C science (``docs/18_generalizing_to_sciences.md``) grounds its metric in an
+    action that happens **outside** ``siro``, under human authority. The class is recorded so
+    the governance packet states exactly what kind of real-world action is being authorized.
+    """
+
+    ASSAY = "assay"  # a wet-lab assay / biological or chemical measurement
+    FABRICATION = "fabrication"  # a fabrication / tape-out / manufacturing run
+    INSTRUMENT = "instrument"  # instrument / telescope / accelerator time
+    EXTERNAL_COMPUTE = "external_compute"  # paid HPC / cloud compute outside the sandbox
+
+
+class ExternalResultStatus(str, Enum):
+    """Outcome class of an ingested external result (Goal 26).
+
+    ``OK`` is a usable measurement; ``NULL`` is a valid but null/inconclusive result;
+    ``FAILED`` is a failed run (the assay did not complete, the instrument errored). ``NULL``
+    and ``FAILED`` are first-class negative data — recorded with reason, never discarded.
+    ``REJECTED`` marks an ingest attempt that did not bind to a live, matching approval; it is
+    logged for audit but never promotes a candidate.
+    """
+
+    OK = "ok"
+    NULL = "null"
+    FAILED = "failed"
+    REJECTED = "rejected"
+
+
+class ExternalExperimentSpec(BaseModel):
+    """Typed payload describing one proposed external experiment (Goal 26).
+
+    This is the exact, content-hashed payload of an ``EXTERNAL_EXPERIMENT``
+    :class:`ApprovalRequest`: the action class, the precise proposal (which candidate, what to
+    measure), and the cost/risk envelope. Because it is hashed into the request's
+    ``content_hash``, an approval authorizes *only* this proposal — a different candidate or a
+    different measurement produces a different hash and cannot be satisfied by the same
+    approval. ``candidate_hash`` binds the measurement to the exact candidate under test.
+    """
+
+    action_class: ExternalExperimentClass
+    task_id: str
+    candidate_hash: str
+    proposal: str  # human-readable description of the action to perform
+    measurement: str  # what is measured (maps to the primary metric name)
+    primary_name: str = "primary"
+    higher_is_better: bool = True
+    secondary_names: list[str] = Field(default_factory=list)
+    cost_usd: float = 0.0
+    cost_note: str = ""
+    risk: str = "high"
+    irreversible: bool = True
+
+
+class ExternalResultRecord(BaseModel):
+    """A signed result record returned by a human operator for an approved experiment (Goal 26).
+
+    The operator performs the approved action **outside** ``siro`` and returns the measured
+    value(s) bound to the approved action via ``content_hash`` and ``decision_id``. The record
+    is signed (a local HMAC proof in development); the controller ingests it as the candidate's
+    :class:`MetricRecord` only when the binding matches a live, granted approval. An unapproved,
+    expired, revoked, or hash-mismatched result is recorded with ``status=REJECTED`` and never
+    promotes. Negative and null results (``FAILED`` / ``NULL``) are recorded with ``reason`` —
+    the expensive ones especially are first-class data.
+    """
+
+    record: Literal["external_result"] = "external_result"
+    result_id: str
+    request_id: str
+    decision_id: str = ""
+    content_hash: str = ""
+    action_class: ExternalExperimentClass
+    status: ExternalResultStatus = ExternalResultStatus.OK
+    primary_name: str = "primary"
+    primary: float = 0.0
+    higher_is_better: bool = True
+    secondary: dict[str, float] = Field(default_factory=dict)
+    passed: bool = False
+    operator_id: str = ""  # the human who ran/attested the action — never an agent
+    provenance: str = ""  # instrument id, lab notebook ref, run id, …
+    signature: str = ""
+    signature_payload_hash: str = ""
+    signature_verified: bool = False
+    reason: str = ""
+    created_at: datetime = Field(default_factory=_utcnow)
+
+    def to_metric(self) -> "MetricRecord":
+        """The objective :class:`MetricRecord` the controller promotes on.
+
+        A non-``OK`` (null/failed/rejected) result can never satisfy the correctness
+        precondition, so it is ``passed=False`` regardless of any value carried.
+        """
+        usable = self.status is ExternalResultStatus.OK
+        return MetricRecord(
+            primary_name=self.primary_name,
+            primary=self.primary,
+            higher_is_better=self.higher_is_better,
+            passed=bool(self.passed and usable),
+            secondary=dict(self.secondary),
+            reproducible=usable,
+            notes=f"external:{self.action_class.value} provenance={self.provenance or '-'}",
+            error="" if usable else (self.reason or self.status.value),
+        )
+
+
 __all__ = [
     "AttemptStatus",
     "GateDecision",
@@ -629,6 +775,10 @@ __all__ = [
     "ApprovalRequest",
     "ApprovalDecision",
     "ApprovalRevocation",
+    "ExternalExperimentClass",
+    "ExternalResultStatus",
+    "ExternalExperimentSpec",
+    "ExternalResultRecord",
     "TrainedModelArtifact",
     "ModelDeployment",
     "TaskSpec",
