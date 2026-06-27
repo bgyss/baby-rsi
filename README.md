@@ -65,7 +65,8 @@ Tier selection is config-only (`config/tier0.local.yaml`, `config/tier1.frontier
 
 ## Implementation Status
 
-Goals 01-21 are implemented. Keep this section grouped by tier; put detailed notes in
+Goals 01-21 are implemented; Goals 22-27 are specified, not yet implemented. Keep this
+section grouped by tier; put detailed notes in
 [`docs/implementation_status.md`](docs/implementation_status.md).
 
 ### Tier 0 — Local Bounded Testbed (Goals 01-06)
@@ -126,6 +127,28 @@ Goals 01-21 are implemented. Keep this section grouped by tier; put detailed not
   ([`.claude/skills`](.claude/skills), [`.codex/skills`](.codex/skills), CLI): host-specific <!-- docs-privacy-allow -->
   repo-local skills drive the non-interactive CLI; global `--json` and `--dry-run` support
   precise summaries and previews without side effects.
+
+### Generalization to the Sciences (Goals 22-27 — specified, not yet implemented)
+
+See [`docs/18_generalizing_to_sciences.md`](docs/18_generalizing_to_sciences.md) for the
+evaluator-regime taxonomy and design rationale behind these goals.
+
+- **Goal 22 — Domain-pack interface and evaluator adapter** (packs, packs/ml): formalizes the
+  task/evaluator convention into a typed `EvaluatorAdapter` plus a config-selected domain-pack
+  layout; reseats the ML families as `packs/ml/`. Refactor only — no new domain.
+- **Goal 23 — Mathematics proof-search pack (Lean)** (packs/math): first non-ML pack — a
+  Regime-A domain scored by an offline Lean proof checker, theorem statement read-only to agents.
+- **Goal 24 — Statistical reproducibility gate** (research): generalizes the promotion gate to
+  exact / seeded-deterministic / statistical, promoting noisy evaluators only on a confidence
+  bound — unlocks Regime B without relaxing "no promotion on noise".
+- **Goal 25 — Chip-design pack** (packs/chip): RTL/synthesis candidates gated by offline formal
+  equivalence (Regime A) with a synthesis PPA objective promoted under the statistical gate.
+- **Goal 26 — Governed external-experiment boundary** (governance, schemas): an
+  `EXTERNAL_EXPERIMENT` GovernedAction and propose → approve → execute → ingest lifecycle so
+  Regime-C sciences feed signed, human-approved results back without the execution plane reaching
+  the outside world.
+- **Goal 27 — Drug and life-science pack** (packs/life_science): two-stage capstone — offline
+  in-silico screening (Regime B) gates a few human-approved wet-lab confirmations (Regime C).
 
 ## Document Map
 
