@@ -8,6 +8,8 @@ from siro.docs_check import check_docs
 def copy_docs_tree(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
     shutil.copytree("docs", root / "docs")
+    shutil.copytree(".codex", root / ".codex")
+    shutil.copy("CLAUDE.md", root / "CLAUDE.md")
     shutil.copy("README.md", root / "README.md")
     return root
 
@@ -84,6 +86,41 @@ def test_docs_privacy_check_catches_personal_paths_and_honors_allowlist(tmp_path
     )
     result = check_docs(root)
     assert result.ok, result.errors
+
+
+def test_claude_must_not_describe_repo_as_spec_only(tmp_path):
+    root = copy_docs_tree(tmp_path)
+    claude = root / "CLAUDE.md"
+    claude.write_text(
+        claude.read_text(encoding="utf-8").replace(
+            "`baby-rsi` is the **design specification and implementation**",
+            "`baby-rsi` is the **design specification**",
+        ),
+        encoding="utf-8",
+    )
+
+    result = check_docs(root)
+
+    assert not result.ok
+    assert any("both design specification and implementation" in error for error in result.errors)
+
+
+def test_codex_skill_must_not_tell_codex_to_use_jj(tmp_path):
+    root = copy_docs_tree(tmp_path)
+    skill = root / ".codex/skills/siro/SKILL.md"
+    skill.write_text(
+        skill.read_text(encoding="utf-8")
+        + "\nUse `jj describe` to record coherent Codex changes.\n",
+        encoding="utf-8",
+    )
+
+    result = check_docs(root)
+
+    assert not result.ok
+    assert any(
+        ".codex/skills/siro/SKILL.md" in error and "must use git" in error
+        for error in result.errors
+    )
 
 
 def test_manifest_prompt_path_must_exist(tmp_path):

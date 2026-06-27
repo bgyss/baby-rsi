@@ -19,6 +19,7 @@ class DocsCheckResult:
     checked_goal_count: int
     checked_doc_count: int
     checked_privacy_file_count: int
+    checked_host_instruction_file_count: int
 
     @property
     def ok(self) -> bool:
@@ -35,12 +36,13 @@ def check_docs(
     try:
         manifest = _load_manifest(manifest_file)
     except ValueError as exc:
-        return DocsCheckResult((str(exc),), 0, 0, 0)
+        return DocsCheckResult((str(exc),), 0, 0, 0, 0)
 
     goals = manifest.get("goals")
     if not isinstance(goals, list):
         return DocsCheckResult(
             ("docs/goal_prompts/goals.json: top-level 'goals' must be a list",),
+            0,
             0,
             0,
             0,
@@ -88,12 +90,15 @@ def check_docs(
 
     privacy_files = _privacy_files(root)
     errors.extend(_check_privacy(root, privacy_files))
+    host_instruction_files = _host_instruction_files(root)
+    errors.extend(_check_host_instructions(root, host_instruction_files))
 
     return DocsCheckResult(
         errors=tuple(errors),
         checked_goal_count=len(entries),
         checked_doc_count=len(list(root.glob("docs/[0-9][0-9]_*.md"))),
         checked_privacy_file_count=len(privacy_files),
+        checked_host_instruction_file_count=len(host_instruction_files),
     )
 
 
@@ -253,6 +258,43 @@ def _check_privacy(root: Path, files: list[Path]) -> list[str]:
                         f"{_rel(path, root)}:{line_no}: "
                         f"forbidden personal path pattern {pattern!r}"
                     )
+    return errors
+
+
+def _host_instruction_files(root: Path) -> list[Path]:
+    files: list[Path] = []
+    claude = root / "CLAUDE.md"
+    if claude.exists():
+        files.append(claude)
+    files.extend(sorted(root.glob(".codex/**/*.md")))
+    return files
+
+
+def _check_host_instructions(root: Path, files: list[Path]) -> list[str]:
+    errors: list[str] = []
+    claude = root / "CLAUDE.md"
+    if claude.exists():
+        text = _squash_ws(claude.read_text(encoding="utf-8")).lower()
+        if "design specification and implementation" not in text:
+            errors.append(
+                "CLAUDE.md: repository description must say baby-rsi is both "
+                "design specification and implementation"
+            )
+        if re.search(r"\bspec(?:ification)?[- ]only\b", text):
+            errors.append("CLAUDE.md: repository description must not claim baby-rsi is spec-only")
+    else:
+        errors.append("CLAUDE.md: file is missing")
+
+    for path in files:
+        rel_parts = path.resolve().relative_to(root).parts
+        if ".codex" not in rel_parts:
+            continue
+        for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if re.search(r"\bjj\b|\bjujutsu\b", line, flags=re.IGNORECASE):
+                errors.append(
+                    f"{_rel(path, root)}:{line_no}: "
+                    "Codex-facing instructions must use git in this repo, not jj"
+                )
     return errors
 
 

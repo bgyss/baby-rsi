@@ -1250,7 +1250,8 @@ def _cmd_check_docs(args: argparse.Namespace) -> int:
             "docs check passed: "
             f"{result.checked_goal_count} goals, "
             f"{result.checked_doc_count} numbered docs, "
-            f"{result.checked_privacy_file_count} privacy-scanned files"
+            f"{result.checked_privacy_file_count} privacy-scanned files, "
+            f"{result.checked_host_instruction_file_count} host-instruction files"
         )
         return 0
     print("docs check failed:")

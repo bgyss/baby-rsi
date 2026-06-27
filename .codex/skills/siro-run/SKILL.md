@@ -57,6 +57,6 @@ already-confirmed run can skip the preview.
 1. State the objective result plainly: promoted? primary metric delta? which gate failed
    (safety / reproducibility / hidden-test / edit-surface) if not?
 2. If a budget ceiling tripped (`BudgetExceeded`) or governance denied, halt and escalate.
-3. Record coherent code/doc changes with `jj describe` / `jj new` when jj is available.
+3. Record coherent code/doc changes with normal `git add` / `git commit` commands.
    Never push without the user asking.
 4. Use `siro-watch` to see the run in the context of overall suite health when useful.

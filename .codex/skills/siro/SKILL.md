@@ -50,9 +50,8 @@ reliably:
   is built to be auditable, so start from the archives.
 - **Stay at Tier 0 by default.** It is free, offline, and reproducible. Only go to Tier 1/2
   when the user asks, and say so explicitly when you do.
-- **Auto-commit, never auto-push.** After any coherent change, record it with `jj describe`
-  then `jj new` when jj is available. If jj is unavailable in the worktree, say so and use
-  git only for inspection unless the user asks for a git commit. Pushing stays human-gated.
+- **Auto-commit, never auto-push.** After any coherent change, record it with normal
+  `git add` / `git commit` commands. Pushing stays human-gated.
 - **Promotion is objective.** Never claim a candidate improved things on model judgment:
   it promotes only if the evaluator says the metric improved reproducibly and the gates
   passed. Report gate/safety/reproducibility outcomes faithfully, negatives included.
