@@ -1,0 +1,18 @@
+{
+  "family": "confirmation",
+  "objective": "Confirm a screened candidate's activity against the kinase target with a governed, human-executed wet-lab assay (Regime C). Promotion requires an ingested, signed assay result bound to a live human approval — never an in-silico score.",
+  "edit_surface": "candidate.txt",
+  "primary_metric": "measured_potency",
+  "higher_is_better": true,
+  "evaluator_regime": "external-oracle",
+  "budget_seconds": 5.0,
+  "external": {
+    "action_class": "assay",
+    "proposal": "Run a wet-lab binding/potency assay on the screened candidate molecule against the kinase target.",
+    "measurement": "measured_potency (pIC50) from a wet-lab dose-response assay",
+    "cost_usd": 5000.0,
+    "cost_note": "reagents + instrument time + analyst hours for a dose-response assay",
+    "risk": "high",
+    "irreversible": true
+  }
+}

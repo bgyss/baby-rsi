@@ -6,9 +6,9 @@ organization that can run the same bounded, auditable loop over mathematics, chi
 the physical sciences, drug discovery, and the life sciences. It motivates a small set of
 future goal prompts (sketched in [Staging](#staging)); the Goal 22 domain-pack interface,
 the Goal 23 mathematics pack, the Goal 24 statistical reproducibility gate (Regime B), and the
-Goal 25 chip-design pack (Regime A correctness + Regime B PPA), and the Goal 26 governed
-external-experiment boundary (Regime C) have landed, while the life-science capstone remains
-staged work.
+Goal 25 chip-design pack (Regime A correctness + Regime B PPA), the Goal 26 governed
+external-experiment boundary (Regime C), and the Goal 27 drug/life-science capstone (two-stage
+Regime B screening + Regime C confirmation) have all landed.
 
 The thesis: **the core loop is already domain-agnostic, and the work is not a rewrite — it
 is hardening four existing seams and generalizing two gates.** The non-negotiable invariants
@@ -81,7 +81,15 @@ mechanism rather than inventing a new one — and the execution plane stays offl
   with surrogate models shipped as fixtures. The actual ground truth — does the molecule bind,
   is it non-toxic — is a wet-lab assay, Regime C, and must route through governance. This is the
   canonical two-stage science: cheap in-silico proposal ranking, then a small number of
-  human-approved expensive confirmations.
+  human-approved expensive confirmations. **Implemented in Goal 27** as `packs/life_science/`: a
+  `screening` family (Regime B, an offline surrogate `eval.py` scoring predicted affinity with
+  drug-likeness and synthesizability as hard preconditions, promoted under the Goal 24 gate) and a
+  `confirmation` family (Regime C, the Goal 26 `external-oracle` adapter). `propose_confirmation`
+  (`src/siro/life_science.py`) enforces screening-before-confirmation: a costly, irreversible
+  assay is proposed only for a candidate that cleared the screen, so confirmations stay few and
+  high-value. The pack carries two regimes in one reviewable unit by letting a `confirmation`
+  task override its regime to `external-oracle` in `task.json`; the pack's dispatching evaluator
+  routes each task to the screening or confirmation adapter.
 
 ## What needs to be built — two seam-hardenings and one extension
 
@@ -175,7 +183,8 @@ contract — the outer meta-loop improves *how packs propose and select*, bounde
 5. **Governed external-experiment boundary** — implemented in Goal 26; the Regime-C
    `EXTERNAL_EXPERIMENT` `GovernedAction` propose → approve → execute → ingest lifecycle with a
    signed, hash-bound result and the `external-oracle` evaluator adapter.
-6. **Drug / life-science pack** — in-silico screening on (3), wet-lab confirmation on (5).
+6. **Drug / life-science pack** — implemented in Goal 27; in-silico screening on (3), wet-lab
+   confirmation on (5), with screening-before-confirmation gating the costly assays.
 
 ## Invariants this exploration must not break
 

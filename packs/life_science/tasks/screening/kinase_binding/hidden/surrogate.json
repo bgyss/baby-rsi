@@ -1,0 +1,45 @@
+{
+  "note": "Pinned offline surrogate for the held-out kinase target. Controller-owned; never shown to agents. No eval-time download.",
+  "intercept": 1.0,
+  "binding_weights": {
+    "scaffold": 2.0,
+    "hbond_donor": 1.2,
+    "hbond_acceptor": 0.9,
+    "halogen": 1.0,
+    "aromatic_ring": 0.8,
+    "solubilizer": -0.2,
+    "linker": 0.3,
+    "bulky_group": 0.6,
+    "polar_tail": 0.4
+  },
+  "admet_logp": {
+    "scaffold": 0.4,
+    "hbond_donor": -0.5,
+    "hbond_acceptor": -0.4,
+    "halogen": 0.7,
+    "aromatic_ring": 0.9,
+    "solubilizer": -1.2,
+    "linker": 0.1,
+    "bulky_group": 1.3,
+    "polar_tail": -0.8
+  },
+  "synth_cost": {
+    "scaffold": 0.5,
+    "hbond_donor": 0.4,
+    "hbond_acceptor": 0.4,
+    "halogen": 0.3,
+    "aromatic_ring": 0.4,
+    "solubilizer": 0.6,
+    "linker": 0.2,
+    "bulky_group": 1.1,
+    "polar_tail": 0.5
+  },
+  "thresholds": {
+    "min_logp": -1.0,
+    "max_logp": 5.0,
+    "max_synth_cost": 6.0,
+    "min_tokens": 2,
+    "max_tokens": 10,
+    "require_scaffold": true
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "family": "screening",
+  "objective": "Improve the predicted binding affinity of a candidate molecule for the held-out kinase target while keeping it drug-like (ADMET window) and synthesizable, scored by pinned offline surrogate models.",
+  "edit_surface": "molecule.txt",
+  "primary_metric": "predicted_affinity",
+  "higher_is_better": true,
+  "budget_seconds": 15.0
+}

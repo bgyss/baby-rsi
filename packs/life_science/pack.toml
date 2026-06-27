@@ -1,0 +1,12 @@
+id = "life_science"
+title = "Drug / life-science pack (in-silico screening + governed wet-lab confirmation)"
+version = "1.0.0"
+# A two-stage pack. The pack's default regime is `statistical`: the cheap, offline in-silico
+# screen (Regime B — pinned surrogate docking/ADMET/synthesizability proxies) drives the inner
+# loop and promotes under the Goal 24 confidence-bound gate (it degenerates to an exact decision
+# for a zero-variance surrogate). Confirmation tasks override their regime to `external-oracle`
+# in task.json: a rare, human-approved wet-lab assay (Regime C) scored through the Goal 26
+# governed boundary. The pack's dispatching evaluator routes each task to the right adapter.
+evaluator_regime = "statistical"
+required_tools = ["read_allowed_file", "query_memory", "list_references", "propose_patch"]
+tier_floor = 0

@@ -1,0 +1,1 @@
+scaffold aromatic_ring hbond_donor halogen hbond_acceptor

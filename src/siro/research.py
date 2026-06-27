@@ -149,6 +149,16 @@ def load_research_task(task_dir: str | Path, *, pack: DomainPack | None = None) 
             f"Research task dir {path} must contain task.json, brief.md, eval.py, and baseline/."
         )
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    # A pack declares one default regime, but a *two-stage* pack (Goal 27) carries tasks of
+    # different regimes — cheap offline screening (``statistical``) and governed confirmation
+    # (``external-oracle``) — within one reviewable unit. ``task.json`` may therefore override
+    # the regime per task; the value is controller-owned (a candidate cannot set it), validated
+    # against the known regimes, and the pack's dispatching adapter routes on it. Absent an
+    # override the task inherits the pack's declared regime unchanged (ml/math/chip are untouched).
+    regime = pack.regime
+    regime_override = meta.get("evaluator_regime")
+    if regime_override is not None:
+        regime = EvaluatorRegime(str(regime_override))
     edit_surface = meta["edit_surface"]
     surface_path = baseline_dir / edit_surface
     if not surface_path.exists():
@@ -176,7 +186,7 @@ def load_research_task(task_dir: str | Path, *, pack: DomainPack | None = None) 
         budget_seconds=float(meta.get("budget_seconds", DEFAULT_RESEARCH_BUDGET_SECONDS)),
         pack_id=pack.id,
         pack_version=pack.version,
-        evaluator_regime=pack.regime,
+        evaluator_regime=regime,
         evaluator_adapter=pack.adapter,
         secondary_directions={
             str(k): bool(v) for k, v in (meta.get("secondary_directions") or {}).items()

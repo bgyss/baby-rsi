@@ -67,7 +67,7 @@ Lowering tier must not require a code change.
 
 ## Implementation Status
 
-Goals 01-26 are implemented; Goals 27 are specified, not yet implemented. Keep this
+Goals 01-27 are implemented. Keep this
 section grouped by tier; put detailed notes in
 [`docs/implementation_status.md`](docs/implementation_status.md).
 
@@ -130,7 +130,7 @@ section grouped by tier; put detailed notes in
   repo-local skills drive the non-interactive CLI; global `--json` and `--dry-run` support
   precise summaries and previews without side effects.
 
-### Generalization to the Sciences (Goals 22-26)
+### Generalization to the Sciences (Goals 22-27)
 
 See [`docs/18_generalizing_to_sciences.md`](docs/18_generalizing_to_sciences.md) for the
 evaluator-regime taxonomy and design rationale behind these goals.
@@ -161,10 +161,18 @@ evaluator-regime taxonomy and design rationale behind these goals.
   live, matching approval — an unapproved / expired / revoked / hash-mismatched / unsigned
   result is rejected and logged. CLI: `propose-external-experiment`, `list-external-experiments`,
   `ingest-external-result`, `external-audit`.
-
-### Generalization to the Sciences (Goal 27 — specified, not yet implemented)
-- **Goal 27 — Drug and life-science pack** (packs/life_science): two-stage capstone — offline
-  in-silico screening (Regime B) gates a few human-approved wet-lab confirmations (Regime C).
+- **Goal 27 — Drug and life-science pack** (packs/life_science, life_science): two-stage capstone
+  combining both new regimes on one life-science workflow. Cheap offline **in-silico screening**
+  (Regime B — pinned surrogate docking/ADMET/synthesizability proxies in `hidden/`) ranks
+  candidate molecules and promotes under the Goal 24 statistical gate; drug-likeness and
+  synthesizability are hard preconditions, so a candidate that inflates predicted affinity by
+  stacking lipophilic groups fails outright. A screened candidate may then be **proposed** (never
+  agent-authorized) for a rare, governed **wet-lab confirmation** (Regime C via the Goal 26
+  boundary): promotion to *confirmed* requires an ingested, signed assay result bound to a live
+  human approval — never an in-silico score. `propose_confirmation` enforces
+  screening-before-confirmation so costly, irreversible assays stay few and high-value; the
+  execution plane runs no synthesis or assay and holds no lab credentials. Selected by
+  `config/tier{0,1}.life_science.yaml`.
 
 ## Document Map
 

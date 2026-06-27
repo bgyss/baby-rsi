@@ -339,11 +339,16 @@
     {
       "number": 27,
       "title": "Drug and life-science pack",
-      "status": "specified",
+      "status": "implemented",
       "category": "Generalization to the Sciences",
       "prompt_path": "docs/goal_prompts/goal_27_drug_life_science_pack.md",
       "artifacts": [
-        "packs/life_science/"
+        "packs/life_science/",
+        "src/siro/life_science.py",
+        "src/siro/research.py",
+        "config/tier0.life_science.yaml",
+        "config/tier1.life_science.yaml",
+        "tests/test_life_science_pack.py"
       ],
       "summary": "Capstone two-stage pack: cheap offline in-silico screening (Regime B, pinned surrogate fixtures) ranks candidates and gates a small number of human-approved wet-lab confirmations (Regime C via Goal 26); screening-before-confirmation keeps costly, irreversible assays few and high-value."
     }
