@@ -1,0 +1,39 @@
+# Tier 1 with the chip-design pack selected.
+# Provider bindings mirror the frontier profile; candidate synthesis and formal equivalence
+# checking remain fully offline. The PPA metric is governed by the Goal 24 statistical gate.
+tier: 1
+pack: chip
+
+providers:
+  local:
+    backend: llamacpp
+    base_url: http://127.0.0.1:2276/v1
+    name: unsloth/Qwen3.6-27B-GGUF:Q8_0
+    timeout_seconds: 120
+  anthropic:
+    backend: anthropic
+    name: claude-opus-4-8
+    api_key_env: ANTHROPIC_API_KEY
+    timeout_seconds: 120
+  openai:
+    backend: openai
+    name: gpt-5.2
+    api_key_env: OPENAI_API_KEY
+    timeout_seconds: 120
+
+agent_models:
+  default: anthropic
+  safety: openai
+  evaluation: openai
+
+budget:
+  max_tokens_per_run: 120000
+  max_usd_per_run: 10.0
+  max_usd_per_day: 25.0
+
+network:
+  egress: allowlist
+  allowed_endpoints:
+    - api.anthropic.com
+    - api.openai.com
+    - 127.0.0.1:2276

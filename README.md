@@ -67,7 +67,7 @@ Lowering tier must not require a code change.
 
 ## Implementation Status
 
-Goals 01-24 are implemented; Goals 25-27 are specified, not yet implemented. Keep this
+Goals 01-25 are implemented; Goals 26-27 are specified, not yet implemented. Keep this
 section grouped by tier; put detailed notes in
 [`docs/implementation_status.md`](docs/implementation_status.md).
 
@@ -130,7 +130,7 @@ section grouped by tier; put detailed notes in
   repo-local skills drive the non-interactive CLI; global `--json` and `--dry-run` support
   precise summaries and previews without side effects.
 
-### Generalization to the Sciences (Goals 22-24)
+### Generalization to the Sciences (Goals 22-25)
 
 See [`docs/18_generalizing_to_sciences.md`](docs/18_generalizing_to_sciences.md) for the
 evaluator-regime taxonomy and design rationale behind these goals.
@@ -146,10 +146,14 @@ evaluator-regime taxonomy and design rationale behind these goals.
   the oriented gain clears a confidence bound across fixed seeded replicates — unlocks Regime B
   without relaxing "no promotion on noise". Seeds, replicate count, and confidence are
   controller-owned, recorded on the attempt, and unreachable by a candidate.
+- **Goal 25 — Chip-design pack** (packs/chip): RTL/synthesis candidates scored by an offline
+  Yosys flow — a formal-equivalence proof against a controller-owned reference (Regime A) gates a
+  synthesis area objective (Regime B) promoted under the Goal 24 statistical gate. A
+  non-equivalent design never promotes; the candidate edits only its declared design surface
+  (RTL or an allowlisted synthesis recipe), with the reference held out. Selected by
+  `config/tier{0,1}.chip.yaml`.
 
-### Generalization to the Sciences (Goals 25-27 — specified, not yet implemented)
-- **Goal 25 — Chip-design pack** (packs/chip): RTL/synthesis candidates gated by offline formal
-  equivalence (Regime A) with a synthesis PPA objective promoted under the statistical gate.
+### Generalization to the Sciences (Goals 26-27 — specified, not yet implemented)
 - **Goal 26 — Governed external-experiment boundary** (governance, schemas): an
   `EXTERNAL_EXPERIMENT` GovernedAction and propose → approve → execute → ingest lifecycle so
   Regime-C sciences feed signed, human-approved results back without the execution plane reaching

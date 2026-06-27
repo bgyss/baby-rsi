@@ -1,0 +1,8 @@
+{
+  "family": "rtl_area",
+  "objective": "Reduce the synthesized area (generic cell count) of a small combinational block while remaining formally equivalent to the controller-owned reference function.",
+  "edit_surface": "design.v",
+  "primary_metric": "area_cells",
+  "higher_is_better": false,
+  "budget_seconds": 25.0
+}

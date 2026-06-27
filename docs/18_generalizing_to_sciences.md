@@ -5,9 +5,9 @@ exercised on ML/software self-improvement — generalizes into a domain-agnostic
 organization that can run the same bounded, auditable loop over mathematics, chip design,
 the physical sciences, drug discovery, and the life sciences. It motivates a small set of
 future goal prompts (sketched in [Staging](#staging)); the Goal 22 domain-pack interface,
-the Goal 23 mathematics pack, and the Goal 24 statistical reproducibility gate (Regime B)
-have landed, while the chip-design pack and the external-experiment regime (Regime C) remain
-staged work.
+the Goal 23 mathematics pack, the Goal 24 statistical reproducibility gate (Regime B), and the
+Goal 25 chip-design pack (Regime A correctness + Regime B PPA) have landed, while the
+external-experiment regime (Regime C) and the life-science capstone remain staged work.
 
 The thesis: **the core loop is already domain-agnostic, and the work is not a rewrite — it
 is hardening four existing seams and generalizing two gates.** The non-negotiable invariants
@@ -69,7 +69,9 @@ mechanism rather than inventing a new one — and the execution plane stays offl
   power/performance/area via synthesis (Regime B — tool runtime is noisy, so promote on a
   stable proxy or a confidence bound). The edit-surface / read-only-evaluator invariants map
   directly onto "the candidate may edit the design, never the testbench or the equivalence
-  reference."
+  reference." Implemented in Goal 25 as `packs/chip/`: an offline Yosys flow proves equivalence
+  (miter + SAT) against a controller-owned reference and reports synthesized cell count as the
+  area metric under the Goal 24 statistical gate; `yosys`/`sby` are pinned by nix.
 - **Physical sciences (Regime B, sometimes C).** Computational/theoretical physics — numerical
   simulation, symbolic derivation checked against a reference solver — fits Regime B. Bench
   experimental physics is Regime C.
@@ -156,7 +158,8 @@ contract — the outer meta-loop improves *how packs propose and select*, bounde
    hidden theorem checks, `lake build`, and proof-length/dependency metrics.
 3. **Statistical reproducibility gate** — implemented in Goal 24; unlocks Regime B (confidence
    bound across fixed seeded replicates).
-4. **Chip-design pack** — Yosys / OpenROAD; Regime A correctness + Regime B PPA.
+4. **Chip-design pack** — implemented in Goal 25; offline Yosys equivalence (Regime A
+   correctness) + synthesis area (Regime B PPA) under the statistical gate.
 5. **Governed external-experiment boundary** — the Regime-C `GovernedAction` lifecycle.
 6. **Drug / life-science pack** — in-silico screening on (3), wet-lab confirmation on (5).
 

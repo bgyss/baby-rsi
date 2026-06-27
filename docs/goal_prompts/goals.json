@@ -310,11 +310,14 @@
     {
       "number": 25,
       "title": "Chip-design pack",
-      "status": "specified",
+      "status": "implemented",
       "category": "Generalization to the Sciences",
       "prompt_path": "docs/goal_prompts/goal_25_chip_design_pack.md",
       "artifacts": [
-        "packs/chip/"
+        "packs/chip/",
+        "config/tier0.chip.yaml",
+        "config/tier1.chip.yaml",
+        "tests/test_chip_pack.py"
       ],
       "summary": "Chip-design domain whose candidates are RTL/synthesis recipes: correctness via offline formal equivalence against a controller-owned reference (Regime A) gates a power/performance/area objective measured by synthesis (Regime B, promoted under the Goal 24 statistical gate)."
     },
