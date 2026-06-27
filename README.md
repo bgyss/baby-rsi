@@ -20,6 +20,7 @@ uv run siro --help
 uv run siro --json summarize-research
 uv run siro --dry-run run-scaled --compute-tier 1
 uv run siro run-research packs/ml/tasks/training/tiny_mlp --config config/tier0.local.yaml
+uv run siro run-research packs/math/tasks/lemma/add_zero --config config/tier0.math.yaml
 ```
 
 Canonical interface: `uv run siro ...`. `mise` tasks are thin wrappers.
@@ -60,12 +61,13 @@ task -> propose -> sandbox -> evaluate -> archive -> select -> remember
 | 1 | Frontier-model research org | provider allowlist only | cross-model review |
 | 2 | Governed scale-up | provider allowlist only | human approvals |
 
-Tier selection is config-only (`config/tier0.local.yaml`, `config/tier1.frontier.yaml`,
-`config/tier2.governed.yaml`). Lowering tier must not require a code change.
+Tier and pack selection are config-only (`config/tier0.local.yaml`, `config/tier1.frontier.yaml`,
+`config/tier2.governed.yaml`, plus pack-specific profiles such as `config/tier0.math.yaml`).
+Lowering tier must not require a code change.
 
 ## Implementation Status
 
-Goals 01-22 are implemented; Goals 23-27 are specified, not yet implemented. Keep this
+Goals 01-23 are implemented; Goals 24-27 are specified, not yet implemented. Keep this
 section grouped by tier; put detailed notes in
 [`docs/implementation_status.md`](docs/implementation_status.md).
 
@@ -128,7 +130,7 @@ section grouped by tier; put detailed notes in
   repo-local skills drive the non-interactive CLI; global `--json` and `--dry-run` support
   precise summaries and previews without side effects.
 
-### Generalization to the Sciences (Goal 22)
+### Generalization to the Sciences (Goals 22-23)
 
 See [`docs/18_generalizing_to_sciences.md`](docs/18_generalizing_to_sciences.md) for the
 evaluator-regime taxonomy and design rationale behind these goals.
@@ -136,10 +138,11 @@ evaluator-regime taxonomy and design rationale behind these goals.
 - **Goal 22 — Domain-pack interface and evaluator adapter** (packs, packs/ml): formalizes the
   task/evaluator convention into a typed `EvaluatorAdapter` plus a config-selected domain-pack
   layout; `packs/ml/` is the built-in default pack and preserves existing ML research behavior.
+- **Goal 23 — Mathematics proof-search pack (Lean)** (packs/math): first non-ML pack; exact
+  Regime-A proof tasks run a controller-owned `lake build` evaluator with hidden theorem checks,
+  proof-length/dependency metrics, and math-specific prompt/reference surfaces.
 
-### Generalization to the Sciences (Goals 23-27 — specified, not yet implemented)
-- **Goal 23 — Mathematics proof-search pack (Lean)** (packs/math): first non-ML pack — a
-  Regime-A domain scored by an offline Lean proof checker, theorem statement read-only to agents.
+### Generalization to the Sciences (Goals 24-27 — specified, not yet implemented)
 - **Goal 24 — Statistical reproducibility gate** (research): generalizes the promotion gate to
   exact / seeded-deterministic / statistical, promoting noisy evaluators only on a confidence
   bound — unlocks Regime B without relaxing "no promotion on noise".

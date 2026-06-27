@@ -5,7 +5,8 @@ exercised on ML/software self-improvement — generalizes into a domain-agnostic
 organization that can run the same bounded, auditable loop over mathematics, chip design,
 the physical sciences, drug discovery, and the life sciences. It motivates a small set of
 future goal prompts (sketched in [Staging](#staging)); the Goal 22 domain-pack interface
-has landed, while the non-ML packs and statistical/external regimes remain staged work.
+and Goal 23 mathematics pack have landed, while the statistical/external regimes remain
+staged work.
 
 The thesis: **the core loop is already domain-agnostic, and the work is not a rewrite — it
 is hardening four existing seams and generalizing two gates.** The non-negotiable invariants
@@ -60,8 +61,8 @@ mechanism rather than inventing a new one — and the execution plane stays offl
 - **Mathematics (Regime A).** Candidate = a proof term or a construction; `eval.py` = run a
   proof checker (Lean `lake build`, Coq, Isabelle) on the candidate against a fixed theorem
   statement and emit pass/fail plus secondary metrics (proof length, dependency count). Fully
-  deterministic and offline. The cleanest possible first non-ML domain — it stresses only the
-  domain-pack interface and nothing else.
+  deterministic and offline. The initial `packs/math/` implementation uses Lean/Lake, hidden
+  theorem checks, and exact reruns to stress only the domain-pack interface and nothing else.
 - **Chip design (Regime A → B).** Candidate = RTL/HDL or a synthesis recipe; evaluator = an
   open-source EDA flow. Correctness via formal equivalence against a reference (Regime A);
   power/performance/area via synthesis (Regime B — tool runtime is noisy, so promote on a
@@ -144,8 +145,8 @@ contract — the outer meta-loop improves *how packs propose and select*, bounde
 
 1. **Domain-pack interface + `EvaluatorAdapter`** — implemented in Goal 22; refactor only;
    reseats the existing ML families as `packs/ml/`. No new science.
-2. **First non-ML pack: mathematics via Lean** — pure Regime A. Validates the whole
-   generalization while stressing zero new gates.
+2. **First non-ML pack: mathematics via Lean** — implemented in Goal 23; pure Regime A with
+   hidden theorem checks, `lake build`, and proof-length/dependency metrics.
 3. **Statistical reproducibility gate** — unlocks Regime B.
 4. **Chip-design pack** — Yosys / OpenROAD; Regime A correctness + Regime B PPA.
 5. **Governed external-experiment boundary** — the Regime-C `GovernedAction` lifecycle.

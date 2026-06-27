@@ -284,11 +284,14 @@
     {
       "number": 23,
       "title": "Mathematics proof-search pack (Lean)",
-      "status": "specified",
+      "status": "implemented",
       "category": "Generalization to the Sciences",
       "prompt_path": "docs/goal_prompts/goal_23_math_lean_pack.md",
       "artifacts": [
-        "packs/math/"
+        "packs/math/",
+        "config/tier0.math.yaml",
+        "config/tier1.math.yaml",
+        "tests/test_math_pack.py"
       ],
       "summary": "First non-ML pack: a Regime-A (formal/exact) mathematics domain whose evaluator is a Lean proof checker run offline; candidates are proofs scored by verification plus proof length/dependency count, with the theorem statement read-only to agents."
     },

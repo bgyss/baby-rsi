@@ -27,6 +27,7 @@
             llama-cpp      # local model server (llama-server) for the research loop;
                            # Tier 0 talks to an OpenAI-compatible llama.cpp endpoint.
                            # An external LlamaBarn server (127.0.0.1:2276) also works.
+            lean4          # Lean/Lake proof checker for the offline math pack.
             stdenv.cc      # C toolchain for any native Python wheels
             git
             jujutsu        # repo is versioned with git + jj

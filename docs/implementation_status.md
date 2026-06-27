@@ -54,3 +54,4 @@ lifecycle, gates, evaluator contracts, and memory model; tier changes happen by 
 | Goal | Modules | Status |
 |---|---|---|
 | 22 — Domain-pack interface and evaluator adapter | `packs`, `research`, `config`, `orchestrator`, `packs/ml/` | Typed `EvaluatorAdapter` and pack loader; config-selected `pack: ml`; existing research families reseated under `packs/ml/tasks/`; per-pack tool whitelists can only narrow the global control-plane toolset. |
+| 23 — Mathematics proof-search pack (Lean) | `packs/math/`, `research`, `config/tier0.math.yaml`, `config/tier1.math.yaml` | First non-ML pack. Exact-regime Lean proof tasks run a controller-owned `lake build` evaluator with hidden theorem checks; metrics record proof verification plus proof length/dependency count; math prompts and references specialize the existing org roles. |

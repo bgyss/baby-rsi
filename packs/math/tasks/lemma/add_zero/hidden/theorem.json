@@ -1,0 +1,6 @@
+{
+  "check_file": "import Proof\n\nexample (n : Nat) : n + 0 = n := add_zero_candidate n\n",
+  "theorem_name": "add_zero_candidate",
+  "required_type": "n + 0 = n",
+  "expected_imports": []
+}

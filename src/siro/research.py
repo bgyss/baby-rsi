@@ -262,6 +262,19 @@ def research_improves(candidate: MetricRecord, baseline: MetricRecord) -> tuple[
     delta = candidate.directional() - baseline.directional()
     if delta > MIN_PRIMARY_IMPROVEMENT:
         return True, f"{name} {baseline.primary:g} -> {candidate.primary:g}"
+    if (
+        name == "proof_verified"
+        and abs(delta) <= MIN_PRIMARY_IMPROVEMENT
+        and candidate.passed
+        and baseline.passed
+    ):
+        for secondary_name in ("proof_length", "dependency_count"):
+            if secondary_name not in candidate.secondary or secondary_name not in baseline.secondary:
+                continue
+            before = baseline.secondary[secondary_name]
+            after = candidate.secondary[secondary_name]
+            if before - after > MIN_PRIMARY_IMPROVEMENT:
+                return True, f"{secondary_name} {before:g} -> {after:g}"
     return False, f"no improvement on {name} ({baseline.primary:g} -> {candidate.primary:g})"
 
 
