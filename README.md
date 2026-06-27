@@ -67,7 +67,7 @@ Lowering tier must not require a code change.
 
 ## Implementation Status
 
-Goals 01-23 are implemented; Goals 24-27 are specified, not yet implemented. Keep this
+Goals 01-24 are implemented; Goals 25-27 are specified, not yet implemented. Keep this
 section grouped by tier; put detailed notes in
 [`docs/implementation_status.md`](docs/implementation_status.md).
 
@@ -130,7 +130,7 @@ section grouped by tier; put detailed notes in
   repo-local skills drive the non-interactive CLI; global `--json` and `--dry-run` support
   precise summaries and previews without side effects.
 
-### Generalization to the Sciences (Goals 22-23)
+### Generalization to the Sciences (Goals 22-24)
 
 See [`docs/18_generalizing_to_sciences.md`](docs/18_generalizing_to_sciences.md) for the
 evaluator-regime taxonomy and design rationale behind these goals.
@@ -141,11 +141,13 @@ evaluator-regime taxonomy and design rationale behind these goals.
 - **Goal 23 — Mathematics proof-search pack (Lean)** (packs/math): first non-ML pack; exact
   Regime-A proof tasks run a controller-owned `lake build` evaluator with hidden theorem checks,
   proof-length/dependency metrics, and math-specific prompt/reference surfaces.
-
-### Generalization to the Sciences (Goals 24-27 — specified, not yet implemented)
 - **Goal 24 — Statistical reproducibility gate** (research): generalizes the promotion gate to
-  exact / seeded-deterministic / statistical, promoting noisy evaluators only on a confidence
-  bound — unlocks Regime B without relaxing "no promotion on noise".
+  `exact` / `seeded-deterministic` / `statistical`, the last promoting noisy evaluators only when
+  the oriented gain clears a confidence bound across fixed seeded replicates — unlocks Regime B
+  without relaxing "no promotion on noise". Seeds, replicate count, and confidence are
+  controller-owned, recorded on the attempt, and unreachable by a candidate.
+
+### Generalization to the Sciences (Goals 25-27 — specified, not yet implemented)
 - **Goal 25 — Chip-design pack** (packs/chip): RTL/synthesis candidates gated by offline formal
   equivalence (Regime A) with a synthesis PPA objective promoted under the statistical gate.
 - **Goal 26 — Governed external-experiment boundary** (governance, schemas): an

@@ -298,11 +298,12 @@
     {
       "number": 24,
       "title": "Statistical reproducibility gate",
-      "status": "specified",
+      "status": "implemented",
       "category": "Generalization to the Sciences",
       "prompt_path": "docs/goal_prompts/goal_24_statistical_reproducibility_gate.md",
       "artifacts": [
-        "src/siro/research.py"
+        "src/siro/research.py",
+        "tests/test_statistical_gate.py"
       ],
       "summary": "Generalizes the reproducibility/promotion gate from exact rerun agreement to a regime spectrum (exact / seeded-deterministic / statistical), adding a noise-aware policy that promotes only when the oriented gain clears a confidence bound across fixed seeded reruns — unlocking Regime B without relaxing 'no promotion on noise'."
     },

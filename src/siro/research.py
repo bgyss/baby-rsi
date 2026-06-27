@@ -39,6 +39,7 @@ controller/config, never in a candidate.
 from __future__ import annotations
 
 import json
+import math
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -55,6 +56,7 @@ from .schemas import (
     MemoryEntry,
     MetricRecord,
     ResearchAttempt,
+    StatisticalEvidence,
 )
 
 DEFAULT_RESEARCH_ATTEMPTS_PATH = Path("runs/research_attempts.jsonl")
@@ -67,6 +69,13 @@ MIN_PRIMARY_IMPROVEMENT = 1e-9
 REPRO_TOLERANCE = 1e-9
 #: Default wall-clock budget for one evaluation, seconds (a *fixed* harness parameter).
 DEFAULT_RESEARCH_BUDGET_SECONDS = 15.0
+
+#: Fixed replicate seeds for the ``statistical`` regime (Goal 24). These are *harness*
+#: parameters set by the controller/config, never candidate-supplied: a candidate can neither
+#: set nor read them (reading ``SIRO_EVAL_SEED`` from candidate code trips the safety gate).
+DEFAULT_STATISTICAL_SEEDS: tuple[int, ...] = (11, 23, 47, 89, 101, 211, 307)
+#: Confidence level the primary-metric delta interval must clear to promote a noisy candidate.
+DEFAULT_STATISTICAL_CONFIDENCE = 0.95
 
 
 # --------------------------------------------------------------------------- #
@@ -102,6 +111,11 @@ class ResearchTask:
     pack_version: str = ""
     evaluator_regime: EvaluatorRegime = EvaluatorRegime.SEEDED_DETERMINISTIC
     evaluator_adapter: EvaluatorAdapter | None = None
+    #: Direction (higher-is-better) per named secondary metric, for the statistical regime's
+    #: secondary-regression check. Empty for deterministic packs (secondaries stay
+    #: informational); a candidate cannot set it — it is read from the controller-owned
+    #: ``task.json``.
+    secondary_directions: dict[str, bool] = field(default_factory=dict)
 
     @property
     def allowed_surface(self) -> str:
@@ -160,6 +174,9 @@ def load_research_task(task_dir: str | Path, *, pack: DomainPack | None = None) 
         pack_version=pack.version,
         evaluator_regime=pack.regime,
         evaluator_adapter=pack.adapter,
+        secondary_directions={
+            str(k): bool(v) for k, v in (meta.get("secondary_directions") or {}).items()
+        },
     )
 
 
@@ -201,12 +218,16 @@ def hidden_payload(task: ResearchTask) -> str | None:
 # --------------------------------------------------------------------------- #
 
 
-def _run_eval_py(task: ResearchTask, candidate_code: str, sandbox: Sandbox) -> MetricRecord:
+def _run_eval_py(
+    task: ResearchTask, candidate_code: str, sandbox: Sandbox, *, seed: int | None = None
+) -> MetricRecord:
     """Run the task's fixed ``eval.py`` against ``candidate_code`` and return its metric.
 
     The candidate supplies only its edited edit surface; ``eval.py`` (controller-owned) and
     the held-out data are copied in by the sandbox. The returned :class:`MetricRecord` is
-    the objective authority the controller promotes on.
+    the objective authority the controller promotes on. ``seed`` is forwarded to ``eval.py``
+    via ``SIRO_EVAL_SEED`` for the statistical regime's replicate runs (Goal 24); deterministic
+    evaluators ignore it.
     """
     files = {task.edit_surface: candidate_code, **task.support_files}
     run = sandbox.run_research(
@@ -214,6 +235,7 @@ def _run_eval_py(task: ResearchTask, candidate_code: str, sandbox: Sandbox) -> M
         files,
         hidden_payload=hidden_payload(task),
         budget_seconds=task.budget_seconds,
+        seed=seed,
     )
     if not run.ran:
         return MetricRecord(
@@ -236,16 +258,213 @@ def _run_eval_py(task: ResearchTask, candidate_code: str, sandbox: Sandbox) -> M
     )
 
 
-def run_research_eval(task: ResearchTask, candidate_code: str, sandbox: Sandbox) -> MetricRecord:
-    """Score a candidate through the task's pack-declared evaluator adapter."""
+def run_research_eval(
+    task: ResearchTask, candidate_code: str, sandbox: Sandbox, *, seed: int | None = None
+) -> MetricRecord:
+    """Score a candidate through the task's pack-declared evaluator adapter.
+
+    ``seed`` is supplied only by the statistical regime's replicate harness (Goal 24); a
+    deterministic adapter ignores it.
+    """
     adapter = task.evaluator_adapter
     if adapter is None:
         adapter = load_pack(task.pack_id).adapter
-    return adapter.evaluate(task, candidate_code, sandbox)
+    return adapter.evaluate(task, candidate_code, sandbox, seed=seed)
 
 
-def research_improves(candidate: MetricRecord, baseline: MetricRecord) -> tuple[bool, str]:
-    """Whether ``candidate`` is an objective improvement over ``baseline`` (deterministic).
+# --------------------------------------------------------------------------- #
+# Statistical reproducibility policy (Goal 24) — promote noisy evaluators on a bound.
+# --------------------------------------------------------------------------- #
+
+
+#: Two-sided Student-t critical values t_{(1+c)/2, df} for the confidence levels the
+#: statistical policy supports. Hardcoded so the gate is deterministic and dependency-free;
+#: ``df >= 30`` falls back to the large-sample (normal) value at key ``"inf"``.
+_T_CRITICAL: dict[float, dict[int | str, float]] = {
+    0.90: {
+        1: 6.314, 2: 2.920, 3: 2.353, 4: 2.132, 5: 2.015, 6: 1.943, 7: 1.895, 8: 1.860,
+        9: 1.833, 10: 1.812, 11: 1.796, 12: 1.782, 13: 1.771, 14: 1.761, 15: 1.753,
+        16: 1.746, 17: 1.740, 18: 1.734, 19: 1.729, 20: 1.725, 21: 1.721, 22: 1.717,
+        23: 1.714, 24: 1.711, 25: 1.708, 26: 1.706, 27: 1.703, 28: 1.701, 29: 1.699,
+        30: 1.697, "inf": 1.645,
+    },
+    0.95: {
+        1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447, 7: 2.365, 8: 2.306,
+        9: 2.262, 10: 2.228, 11: 2.201, 12: 2.179, 13: 2.160, 14: 2.145, 15: 2.131,
+        16: 2.120, 17: 2.110, 18: 2.101, 19: 2.093, 20: 2.086, 21: 2.080, 22: 2.074,
+        23: 2.069, 24: 2.064, 25: 2.060, 26: 2.056, 27: 2.052, 28: 2.048, 29: 2.045,
+        30: 2.042, "inf": 1.960,
+    },
+    0.99: {
+        1: 63.657, 2: 9.925, 3: 5.841, 4: 4.604, 5: 4.032, 6: 3.707, 7: 3.499, 8: 3.355,
+        9: 3.250, 10: 3.169, 11: 3.106, 12: 3.055, 13: 3.012, 14: 2.977, 15: 2.947,
+        16: 2.921, 17: 2.898, 18: 2.878, 19: 2.861, 20: 2.845, 21: 2.831, 22: 2.819,
+        23: 2.807, 24: 2.797, 25: 2.787, 26: 2.779, 27: 2.771, 28: 2.763, 29: 2.756,
+        30: 2.750, "inf": 2.576,
+    },
+}
+
+
+def _t_critical(df: int, confidence: float) -> float:
+    """Two-sided Student-t critical value for ``df`` degrees of freedom at ``confidence``."""
+    table = _T_CRITICAL.get(confidence)
+    if table is None:
+        raise ValueError(
+            f"unsupported statistical confidence level {confidence!r}; "
+            f"supported: {sorted(_T_CRITICAL)} (widening is a human-gated change)"
+        )
+    return table[df] if df in table and df <= 30 else table["inf"]
+
+
+def _confidence_interval(samples: list[float], confidence: float) -> tuple[float, float, float]:
+    """Two-sided ``confidence`` interval (mean, low, high) of ``samples``.
+
+    A degenerate, zero-variance set (e.g. a deterministic evaluator) collapses to a point
+    interval at the mean, so a deterministic positive gain still promotes and a deterministic
+    zero gain does not — the statistical policy is strictly a *generalization* of the exact
+    one, never looser.
+    """
+    n = len(samples)
+    mean = sum(samples) / n
+    if n < 2:
+        return mean, mean, mean
+    variance = sum((x - mean) ** 2 for x in samples) / (n - 1)
+    standard_error = math.sqrt(variance) / math.sqrt(n)
+    half_width = _t_critical(n - 1, confidence) * standard_error
+    return mean, mean - half_width, mean + half_width
+
+
+@dataclass(frozen=True)
+class StatisticalPolicy:
+    """Fixed harness parameters for the ``statistical`` reproducibility regime (Goal 24).
+
+    ``seeds`` (and therefore the replicate count ``N``), the ``confidence`` level, and the
+    ``secondary_regression_tolerance`` are controller/config-owned bounds: a candidate can
+    neither set nor read them. Tightening (more seeds, higher confidence) is a config change;
+    loosening is a reviewed, human-gated escalation (``docs/13``).
+    """
+
+    seeds: tuple[int, ...] = DEFAULT_STATISTICAL_SEEDS
+    confidence: float = DEFAULT_STATISTICAL_CONFIDENCE
+    #: A noisy secondary may drift this far in its worse direction within its CI before it
+    #: counts as a regression. ``0.0`` means no statistically-resolved regression is tolerated.
+    secondary_regression_tolerance: float = 0.0
+
+    @property
+    def replicates(self) -> int:
+        return len(self.seeds)
+
+
+#: The default statistical policy used by the controller when none is configured.
+DEFAULT_STATISTICAL_POLICY = StatisticalPolicy()
+
+
+@dataclass(frozen=True)
+class StatisticalAssessment:
+    """The replicate evaluation outcome: representative metrics + the recorded evidence."""
+
+    candidate_metric: MetricRecord
+    baseline_metric: MetricRecord
+    evidence: StatisticalEvidence
+
+
+def assess_statistical(
+    task: ResearchTask,
+    candidate_code: str,
+    baseline_code: str,
+    sandbox: Sandbox,
+    *,
+    policy: StatisticalPolicy = DEFAULT_STATISTICAL_POLICY,
+) -> StatisticalAssessment:
+    """Run candidate and incumbent ``N`` times under fixed seeds and bound the gain (Goal 24).
+
+    For each seed the candidate and the baseline are scored under the *same* seed (a paired
+    comparison that cancels common noise), and a direction-aware confidence interval is
+    computed on the per-seed primary-metric delta (oriented so larger is always better).
+    Promotion requires the interval to **exclude "no improvement"** — a lucky or within-noise
+    win cannot promote. Every secondary with a declared direction is checked the same way: it
+    may not regress past ``secondary_regression_tolerance`` within its own confidence bound.
+
+    The seeds, replicate count, confidence level, and resulting interval are returned on the
+    :class:`StatisticalEvidence` so the *decision* is reproducible even though the metric is
+    noisy: re-running on the same seeds yields the same interval and the same decision.
+    """
+    candidate_metrics = [
+        run_research_eval(task, candidate_code, sandbox, seed=seed) for seed in policy.seeds
+    ]
+    baseline_metrics = [
+        run_research_eval(task, baseline_code, sandbox, seed=seed) for seed in policy.seeds
+    ]
+    representative_candidate = candidate_metrics[0]
+    representative_baseline = baseline_metrics[0]
+
+    reproducible = all(m.passed and m.reproducible for m in candidate_metrics) and all(
+        m.passed and m.reproducible for m in baseline_metrics
+    )
+    deltas = [c.directional() - b.directional() for c, b in zip(candidate_metrics, baseline_metrics)]
+    mean, low, high = _confidence_interval(deltas, policy.confidence)
+    primary_clears = reproducible and low > MIN_PRIMARY_IMPROVEMENT
+
+    secondary_within_bound: dict[str, bool] = {}
+    for name, higher_is_better in task.secondary_directions.items():
+        if not all(name in m.secondary for m in candidate_metrics) or not all(
+            name in m.secondary for m in baseline_metrics
+        ):
+            continue
+        sign = 1.0 if higher_is_better else -1.0
+        secondary_deltas = [
+            sign * (c.secondary[name] - b.secondary[name])
+            for c, b in zip(candidate_metrics, baseline_metrics)
+        ]
+        _, s_low, _ = _confidence_interval(secondary_deltas, policy.confidence)
+        secondary_within_bound[name] = s_low >= -policy.secondary_regression_tolerance
+    secondaries_ok = all(secondary_within_bound.values())
+
+    promoted = primary_clears and secondaries_ok
+    interval = f"[{low:g}, {high:g}]"
+    if not reproducible:
+        reason = "candidate did not pass on every seeded replicate"
+    elif not primary_clears:
+        reason = f"improvement within noise: {int(policy.confidence * 100)}% CI {interval} includes zero"
+    elif not secondaries_ok:
+        regressed = sorted(n for n, ok in secondary_within_bound.items() if not ok)
+        reason = f"secondary regression within bound: {', '.join(regressed)}"
+    else:
+        reason = (
+            f"{task.primary_name} gain {mean:g}, {int(policy.confidence * 100)}% CI {interval} "
+            f"excludes zero across {policy.replicates} seeds"
+        )
+    evidence = StatisticalEvidence(
+        replicates=policy.replicates,
+        confidence=policy.confidence,
+        seeds=list(policy.seeds),
+        primary_name=task.primary_name,
+        primary_delta_mean=mean,
+        primary_delta_low=low,
+        primary_delta_high=high,
+        per_seed_primary_delta=deltas,
+        secondary_within_bound=secondary_within_bound,
+        reproducible=reproducible,
+        promoted=promoted,
+        reason=reason,
+    )
+    return StatisticalAssessment(representative_candidate, representative_baseline, evidence)
+
+
+def research_improves(
+    candidate: MetricRecord,
+    baseline: MetricRecord,
+    *,
+    regime: EvaluatorRegime = EvaluatorRegime.SEEDED_DETERMINISTIC,
+    evidence: StatisticalEvidence | None = None,
+) -> tuple[bool, str]:
+    """Whether ``candidate`` is an objective improvement over ``baseline``.
+
+    Dispatches on the declared evaluator ``regime`` (Goal 24). The ``exact`` and
+    ``seeded-deterministic`` regimes use the deterministic single-sample comparison below,
+    unchanged. The ``statistical`` regime defers to the replicate ``evidence``: the candidate
+    improves only if the direction-aware confidence interval on the primary-metric delta
+    excludes "no improvement" — a within-noise gain is not an improvement.
 
     A candidate must first satisfy the correctness/success precondition (``passed``); a
     candidate that fails it can never be promoted, regardless of its primary value (this is
@@ -257,6 +476,15 @@ def research_improves(candidate: MetricRecord, baseline: MetricRecord) -> tuple[
     name = candidate.primary_name
     if not candidate.passed:
         return False, "candidate failed the correctness/success precondition"
+    if regime is EvaluatorRegime.STATISTICAL:
+        if evidence is None:
+            return False, "statistical regime requires replicate evidence"
+        if evidence.reproducible and evidence.primary_delta_low > MIN_PRIMARY_IMPROVEMENT:
+            return True, (
+                f"{name} delta CI [{evidence.primary_delta_low:g}, "
+                f"{evidence.primary_delta_high:g}] excludes zero"
+            )
+        return False, evidence.reason or "improvement within noise (CI includes zero)"
     if not baseline.passed:
         return True, "candidate passes where baseline did not"
     delta = candidate.directional() - baseline.directional()
@@ -279,22 +507,58 @@ def research_improves(candidate: MetricRecord, baseline: MetricRecord) -> tuple[
 
 
 def research_reproducibility_gate(
-    task: ResearchTask, candidate_code: str, sandbox: Sandbox, *, runs: int = 2
+    task: ResearchTask,
+    candidate_code: str,
+    sandbox: Sandbox,
+    *,
+    runs: int = 2,
+    evidence: StatisticalEvidence | None = None,
 ) -> GateResult:
-    """Rerun a promotion contender and require it reproduces the same primary metric.
+    """Require a promotion contender's improvement to be reproducible, by regime (Goal 24).
+
+    Dispatches on the task's declared evaluator regime — the same gate, generalized across a
+    spectrum, never weakened:
+
+    - ``exact`` — reruns must agree **bit-for-bit** (proof checkers, formal equivalence).
+    - ``seeded-deterministic`` — today's behavior: reruns must agree within
+      :data:`REPRO_TOLERANCE` (Goal 09).
+    - ``statistical`` — the gain must clear a **confidence bound** across the policy's fixed
+      seeded replicates (the ``evidence`` computed by :func:`assess_statistical`); a
+      within-noise or non-reproducible candidate fails. Because the seeds are fixed, the
+      decision is itself reproducible: the same seeds yield the same interval and decision.
 
     A candidate whose metric is not reproducible — because it failed to run on a rerun or
-    drifted past tolerance — fails and is never promoted (Goal 09: "reproducible across
-    reruns before promotion"). The seeded benchmarks are deterministic, so honest reruns
-    agree exactly.
+    drifted past tolerance, or its improvement lies within noise — fails and is never promoted.
     """
     if task.evaluator_regime is EvaluatorRegime.STATISTICAL:
+        if evidence is None:
+            return GateResult(
+                gate="research_reproducibility",
+                decision=GateDecision.FAILED,
+                risk_level="high",
+                findings=["statistical regime requires replicate evidence (none computed)"],
+            )
+        interval = f"[{evidence.primary_delta_low:g}, {evidence.primary_delta_high:g}]"
+        summary = (
+            f"{evidence.replicates} seeded replicates at {int(evidence.confidence * 100)}% "
+            f"confidence, primary-delta CI {interval}, seeds={evidence.seeds}"
+        )
+        if not evidence.promoted:
+            return GateResult(
+                gate="research_reproducibility",
+                decision=GateDecision.FAILED,
+                risk_level="high",
+                findings=[f"{evidence.reason} ({summary})"],
+            )
         return GateResult(
             gate="research_reproducibility",
-            decision=GateDecision.FAILED,
-            risk_level="high",
-            findings=["statistical evaluator regime is declared but unsupported until Goal 24"],
+            decision=GateDecision.PASSED,
+            risk_level="low",
+            notes=f"improvement clears the confidence bound: {summary}",
         )
+    # The exact regime demands bit-for-bit agreement; seeded-deterministic allows the
+    # historical floating-point tolerance. Both reproduce existing behavior for current tasks.
+    tolerance = 0.0 if task.evaluator_regime is EvaluatorRegime.EXACT else REPRO_TOLERANCE
     runs = max(runs, 2)
     metrics = [run_research_eval(task, candidate_code, sandbox) for _ in range(runs)]
     if not all(m.passed and m.reproducible for m in metrics):
@@ -305,7 +569,7 @@ def research_reproducibility_gate(
             findings=["candidate did not produce a passing metric on every rerun"],
         )
     primaries = [round(m.primary, 12) for m in metrics]
-    if max(primaries) - min(primaries) > REPRO_TOLERANCE:
+    if max(primaries) - min(primaries) > tolerance:
         return GateResult(
             gate="research_reproducibility",
             decision=GateDecision.FAILED,
@@ -559,6 +823,12 @@ __all__ = [
     "DEFAULT_RESEARCH_BUDGET_SECONDS",
     "MIN_PRIMARY_IMPROVEMENT",
     "REPRO_TOLERANCE",
+    "DEFAULT_STATISTICAL_SEEDS",
+    "DEFAULT_STATISTICAL_CONFIDENCE",
+    "DEFAULT_STATISTICAL_POLICY",
+    "StatisticalPolicy",
+    "StatisticalAssessment",
+    "assess_statistical",
     "ResearchTask",
     "load_research_task",
     "discover_research_tasks",

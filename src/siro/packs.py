@@ -53,9 +53,19 @@ class EvaluatorAdapter(Protocol):
     regime: EvaluatorRegime
 
     def evaluate(
-        self, task: "ResearchTask", candidate_code: str, sandbox: "Sandbox"
+        self,
+        task: "ResearchTask",
+        candidate_code: str,
+        sandbox: "Sandbox",
+        *,
+        seed: int | None = None,
     ) -> MetricRecord:
-        """Score ``candidate_code`` against ``task`` inside ``sandbox``."""
+        """Score ``candidate_code`` against ``task`` inside ``sandbox``.
+
+        ``seed`` is supplied only by the ``statistical`` regime's replicate harness (Goal 24);
+        a deterministic adapter ignores it and a stochastic ``eval.py`` reads it from the
+        controller-set ``SIRO_EVAL_SEED`` env var.
+        """
 
 
 @dataclass(frozen=True)
@@ -65,11 +75,16 @@ class EvalPyAdapter:
     regime: EvaluatorRegime = EvaluatorRegime.SEEDED_DETERMINISTIC
 
     def evaluate(
-        self, task: "ResearchTask", candidate_code: str, sandbox: "Sandbox"
+        self,
+        task: "ResearchTask",
+        candidate_code: str,
+        sandbox: "Sandbox",
+        *,
+        seed: int | None = None,
     ) -> MetricRecord:
         from .research import _run_eval_py
 
-        return _run_eval_py(task, candidate_code, sandbox)
+        return _run_eval_py(task, candidate_code, sandbox, seed=seed)
 
 
 class PackManifest(BaseModel):

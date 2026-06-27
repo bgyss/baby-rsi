@@ -39,6 +39,32 @@ Fail if the candidate:
 - Overfits to visible tests.
 - Produces non-reproducible gains.
 
+#### Reproducibility regimes (Goal 24)
+
+"Reproducible" is not one rule but a **spectrum**, selected by the pack/adapter's declared
+evaluator regime (Goal 22). The bound — *no promotion on noise* — is identical across all
+three; only the test that establishes it changes:
+
+- **`exact`** — reruns must agree **bit-for-bit** (proof checkers, formal equivalence).
+- **`seeded-deterministic`** — reruns must agree within a small floating-point tolerance
+  (`REPRO_TOLERANCE`); today's default for the ML pack and every existing task.
+- **`statistical`** — for stochastic evaluators (numerical simulators, surrogate models,
+  docking scores), the candidate and incumbent are each scored across **N fixed seeded
+  replicates** (paired on the same seed), and the candidate promotes only if a direction-aware
+  **confidence interval** on the primary-metric delta **excludes "no improvement"**. A lucky or
+  within-noise win cannot promote — the statistical policy is *stricter*, not looser. Declared
+  secondary metrics are checked under the same policy (a noisy secondary may not regress past
+  its threshold within its confidence bound).
+
+The replicate count `N`, the confidence level, and the seed set are **fixed harness/config
+parameters** owned by the controller (`StatisticalPolicy`), never candidate-supplied: the seed
+reaches the controller-owned `eval.py` via the `SIRO_EVAL_SEED` env var, so a candidate that
+reads it trips the safety gate's `env_read` rule (the same enforcement as `SIRO_HIDDEN_PATH`).
+The seeds, `N`, and the computed interval are recorded on the attempt, so the *decision* is
+reproducible even though the metric is noisy: re-running the gate on the same seeds yields the
+same promotion decision. Changing `N`, the confidence level, or the seed policy is a
+human-gated change reviewed like a meta-change.
+
 ### Gate C: Safety regression
 
 Fail or escalate if the candidate:

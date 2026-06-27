@@ -375,6 +375,38 @@ class MetricRecord(BaseModel):
         return self.primary if self.higher_is_better else -self.primary
 
 
+class StatisticalEvidence(BaseModel):
+    """Replicate-based promotion evidence for the ``statistical`` regime (Goal 24).
+
+    Packs whose evaluators are stochastic (numerical simulators, surrogate models, docking
+    scores) promote on a *confidence bound* across N seeded reruns rather than on bit-exact
+    agreement. This record makes the noisy decision **reproducible**: the seeds, replicate
+    count, confidence level, and the resulting direction-aware interval on the primary-metric
+    delta are all recorded, so re-running the gate on the same seeds yields the same
+    promotion decision even though any single metric is noisy.
+
+    The interval is oriented so *larger is always better* (the primary's
+    :meth:`MetricRecord.directional` value): ``primary_delta_low > 0`` means the candidate's
+    improvement over the incumbent clears the bound — a lucky or within-noise win does not
+    promote. ``replicates``, ``confidence``, and ``seeds`` are fixed harness parameters set by
+    the controller/config; a candidate can neither set nor read them.
+    """
+
+    regime: str = "statistical"
+    replicates: int
+    confidence: float
+    seeds: list[int] = Field(default_factory=list)
+    primary_name: str = "primary"
+    primary_delta_mean: float = 0.0
+    primary_delta_low: float = 0.0
+    primary_delta_high: float = 0.0
+    per_seed_primary_delta: list[float] = Field(default_factory=list)
+    secondary_within_bound: dict[str, bool] = Field(default_factory=dict)
+    reproducible: bool = False
+    promoted: bool = False
+    reason: str = ""
+
+
 class ResearchAttempt(BaseModel):
     """One archived research-task attempt — kept apart from code/training attempts (Goal 09).
 
@@ -383,7 +415,9 @@ class ResearchAttempt(BaseModel):
     so the suite summary can report per task family (algorithm / training / policy). Stored
     in ``runs/research_attempts.jsonl``; negative results — failed correctness, regressions,
     timeouts, gate rejections — are recorded with their ``status`` and ``reason``, never
-    discarded.
+    discarded. ``statistical`` carries the replicate seeds and confidence interval when the
+    pack's evaluator declares the ``statistical`` regime (Goal 24), so a noisy promotion stays
+    auditable and reproducible.
     """
 
     attempt_id: str
@@ -396,6 +430,7 @@ class ResearchAttempt(BaseModel):
     status: AttemptStatus = AttemptStatus.REJECTED
     reason: str = ""
     gates: GateReport | None = None
+    statistical: StatisticalEvidence | None = None
     created_at: datetime = Field(default_factory=_utcnow)
 
 

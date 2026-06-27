@@ -376,6 +376,7 @@ class Sandbox:
         *,
         hidden_payload: str | None = None,
         budget_seconds: float = 10.0,
+        seed: int | None = None,
     ) -> ResearchRun:
         """Run a research task's fixed ``eval.py`` against candidate ``files`` in isolation.
 
@@ -422,6 +423,13 @@ class Sandbox:
                 hidden_path = Path(hidden_tmp) / "hidden.json"
                 hidden_path.write_text(hidden_payload, encoding="utf-8")
                 env["SIRO_HIDDEN_PATH"] = str(hidden_path)
+            if seed is not None:
+                # The statistical regime (Goal 24) runs eval.py under fixed, controller-chosen
+                # replicate seeds. The seed reaches the controller-owned eval.py via the env —
+                # never the candidate's cwd — so a candidate reading it trips the safety gate's
+                # ``env_read`` rule, exactly like ``SIRO_HIDDEN_PATH``. Seeds are a harness
+                # parameter; a candidate can neither set nor read them.
+                env["SIRO_EVAL_SEED"] = str(seed)
             cmd = [sys.executable, str(run_script)]
             start = time.perf_counter()
             try:

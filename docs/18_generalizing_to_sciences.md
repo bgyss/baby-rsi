@@ -4,8 +4,9 @@ This is a design exploration with the first packaging step now built. It propose
 exercised on ML/software self-improvement — generalizes into a domain-agnostic research
 organization that can run the same bounded, auditable loop over mathematics, chip design,
 the physical sciences, drug discovery, and the life sciences. It motivates a small set of
-future goal prompts (sketched in [Staging](#staging)); the Goal 22 domain-pack interface
-and Goal 23 mathematics pack have landed, while the statistical/external regimes remain
+future goal prompts (sketched in [Staging](#staging)); the Goal 22 domain-pack interface,
+the Goal 23 mathematics pack, and the Goal 24 statistical reproducibility gate (Regime B)
+have landed, while the chip-design pack and the external-experiment regime (Regime C) remain
 staged work.
 
 The thesis: **the core loop is already domain-agnostic, and the work is not a rewrite — it
@@ -103,19 +104,25 @@ live in `packs/ml/`, proving the interface against known-good behavior before an
 added. A pack's `tools.allow` may narrow the control-plane toolset but cannot grant tools outside
 the global allowlist.
 
-### 2. Generalize the reproducibility / promotion gate (exact → statistical)
+### 2. Generalize the reproducibility / promotion gate (exact → statistical) — implemented (Goal 24)
 
-Today promotion requires near-bit-exact rerun agreement (`REPRO_TOLERANCE = 1e-9` in
-`siro.research`). Regime B needs a spectrum, selected by the pack's declared regime:
+Promotion previously required near-bit-exact rerun agreement (`REPRO_TOLERANCE = 1e-9` in
+`siro.research`). Goal 24 generalized this into a spectrum, selected by the pack's declared
+regime:
 
-- **exact** — proof checkers, formal equivalence (Regime A): reruns must agree exactly.
-- **seeded-deterministic** — the current behavior (seeded in-silico).
-- **statistical** — promote only if the oriented gain over the incumbent clears a confidence
-  bound across N seeded reruns; a lucky or noisy win cannot promote.
+- **exact** — proof checkers, formal equivalence (Regime A): reruns must agree bit-for-bit.
+- **seeded-deterministic** — the prior behavior (seeded in-silico) within `REPRO_TOLERANCE`.
+- **statistical** — the candidate and incumbent are scored across N **fixed seeded replicates**
+  (paired on the same seed via `SIRO_EVAL_SEED`), and the candidate promotes only if a
+  direction-aware **confidence interval** on the primary-metric delta excludes zero; a lucky or
+  noisy win cannot promote. Declared secondaries are checked the same way.
 
-This is a contained change to `research_improves` / `research_reproducibility_gate`. The
-invariant "no promotion on noise" is preserved — it is generalized, not relaxed. Human approval
-is still required to widen any benchmark or budget.
+`research_improves` / `research_reproducibility_gate` now dispatch on the declared regime; the
+`StatisticalPolicy` (seeds, N, confidence) is a controller/config bound a candidate cannot set
+or read, and the seeds + computed interval are recorded on the attempt so the noisy *decision*
+is itself reproducible. The invariant "no promotion on noise" is preserved — generalized, not
+relaxed. Human approval is still required to widen N, the confidence level, the seed policy, or
+any benchmark or budget. This unlocks **Regime B** for every pack that follows.
 
 ### 3. A governed external-experiment boundary (Regime C)
 
@@ -147,7 +154,8 @@ contract — the outer meta-loop improves *how packs propose and select*, bounde
    reseats the existing ML families as `packs/ml/`. No new science.
 2. **First non-ML pack: mathematics via Lean** — implemented in Goal 23; pure Regime A with
    hidden theorem checks, `lake build`, and proof-length/dependency metrics.
-3. **Statistical reproducibility gate** — unlocks Regime B.
+3. **Statistical reproducibility gate** — implemented in Goal 24; unlocks Regime B (confidence
+   bound across fixed seeded replicates).
 4. **Chip-design pack** — Yosys / OpenROAD; Regime A correctness + Regime B PPA.
 5. **Governed external-experiment boundary** — the Regime-C `GovernedAction` lifecycle.
 6. **Drug / life-science pack** — in-silico screening on (3), wet-lab confirmation on (5).
