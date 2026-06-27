@@ -32,6 +32,7 @@ Canonical interface: `uv run siro ...`. `mise` tasks are thin wrappers.
 | Operate the system | [`docs/operating_guide.md`](docs/operating_guide.md) |
 | See a conversational workflow | [`docs/session_tutorial.md`](docs/session_tutorial.md) |
 | Per-goal implementation detail | [`docs/implementation_status.md`](docs/implementation_status.md) |
+| Drug-discovery validation and deployment | [`docs/19_drug_discovery_testing_deployment_plan.md`](docs/19_drug_discovery_testing_deployment_plan.md) |
 | Core architecture | [`docs/01_system_architecture.md`](docs/01_system_architecture.md) |
 | Safety and promotion gates | [`docs/05_evaluation_and_safety_gates.md`](docs/05_evaluation_and_safety_gates.md) |
 | Self-improvement contract | [`docs/13_self_improvement_loop.md`](docs/13_self_improvement_loop.md) |
@@ -197,3 +198,4 @@ evaluator-regime taxonomy and design rationale behind these goals.
 | [`docs/16_low_cost_validation_plan.md`](docs/16_low_cost_validation_plan.md) | Validation ladder. |
 | [`docs/17_operational_pilot_plan.md`](docs/17_operational_pilot_plan.md) | Pilot plan and report contract. |
 | [`docs/18_generalizing_to_sciences.md`](docs/18_generalizing_to_sciences.md) | Design exploration: generalizing the loop to math, chip, physics, and life sciences. |
+| [`docs/19_drug_discovery_testing_deployment_plan.md`](docs/19_drug_discovery_testing_deployment_plan.md) | Step-by-step drug-discovery testing, deployment, wet-lab integration, and automation plan. |

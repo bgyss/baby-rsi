@@ -1,293 +1,317 @@
 # 14 - Project Retrospective and Refinement Backlog
 
-This document is a practical retrospective on the current `siro` implementation:
-what is strong, what is still fragile, and what should be refined before treating the
-system as a serious scaled research platform.
+This document is a practical retrospective on the current `siro` implementation after
+Goals 01-27. It records what the project has actually proven, what remains fragile,
+and what should be validated before treating the system as a serious research platform.
 
-It is intentionally operational. The design documents define the desired safety model;
-this file records the project-level lessons from implementing Goals 01-12 and the
-next work that would make the testbed more robust.
+The core lesson is stable: `siro` is strongest when it is a bounded, auditable research
+organization, not an unrestricted autonomy system. Models propose. The controller runs
+fixed actions. Objective evaluators score. Governance decides whether high-risk or
+external actions may happen.
 
-## Current strengths
+## Project Arc
 
-### The core abstraction is sound
+### Goals 01-06: local self-improvement testbed
 
-The project keeps one loop across all capability tiers:
+The first stage established the load-bearing loop:
 
 ```text
-proposal -> sandboxed execution -> objective evaluation -> gates -> archive -> memory
+task -> proposal -> sandbox -> evaluator -> gates -> archive -> memory
 ```
 
-That uniformity is the main architectural win. Tier 0, Tier 1, and Tier 2 change the
-models and governance around the loop, not the lifecycle itself. This keeps lowering
-capability tiers a config change instead of a code fork.
+The loop began with code-improver tasks, then added research memory, promotion gates,
+bounded meta-research, and a tiny training search. The important design decision was
+that all improvement happens through attempts and archives. Negative results are kept,
+promotion is metric-gated, and meta-changes stay reversible.
 
-### Safety boundaries are explicit
+What worked:
 
-The implementation has concrete boundaries rather than only policy language:
+- Typed schemas made attempts, metrics, gates, and ledgers inspectable.
+- JSONL archives made early runs easy to audit.
+- Scripted model clients let the control plane be tested without network or model spend.
+- The execution plane stayed small enough to reason about.
 
-- Candidate execution runs in a sandboxed execution plane.
+What remains fragile:
+
+- The local sandbox is a developer fallback, not a production isolation boundary.
+- Early JSONL-only storage was easy to read but not enough for multi-worker operations.
+- Tiny fixtures prove invariants, not research productivity.
+
+### Goals 07-09: provider-agnostic research organization
+
+The second stage generalized from a local loop to a role-based research organization:
+Hypothesis, Literature, Implementation, Eval, Safety, Interpretation, and Memory.
+The provider abstraction kept model choice in config, and Tier 1 added frontier providers
+without giving candidate code network access or credentials.
+
+What worked:
+
+- Role-to-model binding is config-only.
+- Budget enforcement and model-call ledgers make spend part of the audit trail.
+- Cross-model safety review is a concrete Tier 1 invariant.
+- Research tasks use controller-owned evaluators and hidden data.
+
+What remains fragile:
+
+- Provider quality is still mostly tested through scripted clients and small pilots.
+- The benchmark suite is broad enough for regression tests, not enough for strategic
+  model-selection claims.
+- Provider pricing and operational behavior must be refreshed as model catalogs change.
+
+### Goals 10-12: governed scale-up
+
+The third stage added the governance machinery: default-deny approvals, governed compute
+scale-up, and governed offline model training. This was the point where the architecture
+became more than a local toy: a high-budget or high-risk action can be proposed by the org
+but must be authorized by a human-controlled ledger.
+
+What worked:
+
+- Approvals are bound to exact payload hashes.
+- Revocation, expiry, and single-use semantics are explicit.
+- Higher compute requires a smaller-tier pass plus approval.
+- Model deployment is distinct from model training.
+
+What remains fragile:
+
+- Any real scale-up still depends on the target isolation backend and operator process.
+- Governance identity became strong only after Goal 19; older records must remain readable
+  but should not be treated as production-grade approvals.
+
+### Goals 13-20: hardening and operational evidence
+
+The hardening stage converted several earlier risks into first-class machinery:
+documentation checks, pricing audits, hard resource backends, SQLite storage, benchmark
+expansion, provider observability, governance identity/policy, and the operational pilot
+report.
+
+What worked:
+
+- Documentation drift is now mechanically checked against `docs/goal_prompts/goals.json`.
+- Docs path privacy is a repository invariant.
+- SQLite adds migrations, idempotency keys, hash-chained governance/artifact records, and
+  JSONL import/export while preserving the readable archive path.
+- The sandbox backend abstraction separates portable local development from Linux cgroup v2
+  hard isolation.
+- Provider errors, retries, request metadata, and pricing audits are inspectable.
+- The pilot plan can compare Tier 0 and frontier arms by cost per objective promotion.
+
+What remains fragile:
+
+- A production deployment still needs a pinned Linux runner or container environment where
+  hard-isolation tests pass.
+- The pilot report is only meaningful after real arms have been run with preserved
+  attempt/model-call ledgers.
+- Cost estimates remain estimates until reconciled with provider dashboards.
+
+### Goal 21: conversational operation
+
+Goal 21 made the CLI operable from Claude Code and Codex without inventing a REPL. The
+right abstraction is still the CLI; the host-specific skills are thin operator layers that
+read state, dry-run, explain implications, and then call the same commands a human would.
+
+What worked:
+
+- `--json` makes read-only summaries scriptable.
+- `--dry-run` makes governance and tier implications visible before side effects.
+- Host skills did not bypass the approval model.
+
+What remains fragile:
+
+- Conversational operation is only as safe as the underlying commands and docs.
+- Any new command that changes state should get a dry-run path before becoming a
+  conversational affordance.
+
+### Goals 22-27: generalization to sciences
+
+The final stage changed the project from "ML/software research testbed" to a domain-pack
+research substrate. The central move was to classify domains by evaluator regime:
+
+- `exact`: formal proof or deterministic checker.
+- `seeded-deterministic`: offline computation reproducible within tolerance.
+- `statistical`: noisy offline evaluator promoted only by a confidence-bound gate.
+- `external-oracle`: real-world action ingested through governed external results.
+
+Goal 22 formalized domain packs. Goal 23 added Lean proof search. Goal 24 added the
+statistical reproducibility gate. Goal 25 added a chip-design pack. Goal 26 added the
+governed external-experiment boundary. Goal 27 added the life-science pack with offline
+screening plus governed wet-lab confirmation.
+
+What worked:
+
+- Domain specificity now lives in packs: tasks, evaluator adapter, prompts, references,
+  and narrowed tool whitelists.
+- The same lifecycle spans ML, math, chip design, and life science.
+- The statistical gate preserves the "no promotion on noise" invariant for Regime B tasks.
+- External experiments are proposed, approved, executed outside `siro`, and ingested as
+  signed, hash-bound results.
+- The life-science pack enforces screening-before-confirmation. A candidate cannot jump
+  straight from an in-silico score to a wet-lab request.
+
+What remains fragile:
+
+- The life-science evaluator is a toy pinned surrogate, not a scientific model.
+- The current wet-lab path is an integration boundary, not a lab automation stack.
+- Real assay validation, biosafety, chain of custody, instrument qualification, and data
+  integrity are outside the repo and must be owned by qualified humans and institutions.
+- External data ingestion proves governance semantics, not scientific truth.
+
+## Current Strengths
+
+### The architecture has one loop
+
+The project avoided separate designs for local code tasks, frontier research, governed
+compute, math proofs, chip design, and drug-discovery screening. All of them use the same
+proposal, evaluation, gate, archive, and memory lifecycle. This is the main architectural win.
+
+### Safety boundaries are concrete
+
+The implementation has executable boundaries rather than only policy language:
+
+- Candidate execution is offline and credential-free.
 - Model-backed agents stay in the control plane.
-- Candidate code does not receive model clients or credentials.
-- Agent tools are control-plane-only helpers, not raw shell or network tools.
-- Frontier-provider egress goes through an allowlist check.
-- Promotion goes through gates, not model self-judgment.
-
-This is the right direction for a self-improving system: the model can propose, but the
-controller decides what is run, what is scored, and what can promote.
+- Candidate code never receives model clients.
+- Agent tools are control-plane helpers, not raw shell or arbitrary network.
+- Promotion goes through objective evaluators and gates.
+- External actions require governed approval and signed result ingestion.
 
 ### Auditability is first-class
 
-The project consistently records:
+The project records attempts, failures, model calls, memory entries, meta-change proposals,
+governance packets, pricing metadata, storage hashes, and pilot evidence. That matters more
+than a flashy agent demo: a research system that cannot explain failed attempts cannot improve
+reliably.
 
-- Attempts, including failures and negative results.
-- Model calls and estimated spend.
-- Memory entries.
-- Meta-change proposals.
-- Governance requests, decisions, and revocations.
-- Tier 2 model-training artifacts and deployment decisions.
+### Domain packs are the right extension point
 
-For a research organization, this is more important than raw agent sophistication. It
-means failures can become data rather than disappearing into logs or chat history.
+The pack interface keeps science-specific logic out of the controller. A new domain should be
+reviewed as a pack: evaluator regime, tasks, hidden data, prompts, references, tool whitelist,
+and promotion policy. A pack that widens the global safety invariants is a contract violation.
 
-### Cheap tests cover most invariants
+## Current Weak Points
 
-The test suite uses deterministic scripted model clients to exercise the organization
-without network, credentials, or model-server availability. That is a strong testing
-shape for this kind of system because it decouples control-plane correctness from model
-quality and API availability.
+### The evidence is mostly structural
 
-The existing tests already cover important invariants:
+The test suite strongly verifies invariants, but it does not yet prove that the organization
+regularly discovers valuable improvements. The honest current claim is:
 
-- Cross-model review is enforced at Tier 1+.
-- Same-provider safety review is refused when cross-model review is required.
-- Safety disagreement escalates instead of promoting.
-- Budget breaches halt and escalate.
-- Hidden research data is not exposed through relative candidate paths.
-- Candidate attempts that read environment paths are blocked before execution.
-- Governance approvals are default-deny and hash-bound.
+- The machinery, boundaries, and ledgers exist.
+- The toy and fixture tasks exercise the intended failure modes.
+- Scientific productivity remains unproven until larger benchmark and pilot evidence exists.
 
-## Current weak points
+### Real deployment is environment-dependent
 
-### Documentation drift already appeared
+The portable local backend is useful for development. Production claims require a target
+runner where cgroup, process, filesystem, and network isolation are enforced by the platform,
+not merely sampled by a controller process.
 
-`README.md` had an inconsistent status summary: the detailed implementation section
-said Goals 01-12 were implemented, while other status text still treated Tier 2 as
-aspirational or skipped over the implemented Goals 10-12 path.
+### The life-science pack is a capstone scaffold
 
-That is a small example of a serious project risk. In this repo, documentation is part
-of the contract. When docs drift from implementation, future agents will make wrong
-assumptions because they are explicitly told to treat docs as authoritative.
+The pack correctly models two-stage drug discovery at an architectural level: offline screen,
+then governed confirmation. It does not yet include validated molecular modeling, qualified
+assays, real compound logistics, or lab instrument integration. Those should be added only as
+governed integrations, not by expanding candidate execution privileges.
 
-Refinement:
+### Governance depends on operator discipline
 
-- Keep `README.md` in the same change as any implementation-status change.
-- Add a narrow docs consistency check for goal status.
-- Consider a small generated status table sourced from a machine-readable manifest.
+Hash-bound, signed approvals are necessary but not sufficient. Production use needs real
+identity management, separation of duties, training, incident response, and external review.
+The software can enforce some boundaries; it cannot replace institutional controls.
 
-### Pricing defaults can become stale
+## Refined Backlog
 
-The provider pricing table is intentionally an estimate, not billing truth. That is a
-reasonable MVP choice, but stale estimates undermine budget gates, run summaries, and
-scale planning.
+### Milestone A - clean local release candidate
 
-Current public pricing checked on 2026-06-25 differs from the baked-in defaults for at
-least some configured models. For example, Anthropic lists Claude Opus 4.8 at lower
-standard token prices than the default table currently uses, while OpenAI's GPT-5.4
-pricing is also lower than the local default estimate.
-
-Refinement:
-
-- Prefer explicit per-model price overrides in `config/tier1.frontier.yaml` and
-  `config/tier2.governed.yaml`.
-- Add a `siro pricing-audit` command that reports configured model names, default
-  rates, overrides, and last-reviewed dates.
-- Treat changing pricing defaults as a docs + config update, not a hidden code tweak.
-
-### Memory enforcement is not yet production-hard
-
-The current guarded sandbox uses a controller-side `ps` RSS poll to detect memory
-breaches. That is useful for a local macOS-friendly testbed, but it can miss short
-allocation spikes and may not account for process-tree memory correctly.
-
-The full test suite currently exposes this issue: the memory-breach test for governed
-scale-up did not raise the expected `BudgetExceeded` on this machine.
-
-Refinement:
-
-- On Linux, enforce memory ceilings with cgroups rather than RSS polling.
-- Track process-tree RSS, not only the parent process.
-- Keep the current `ps` monitor as a portable fallback, but document it as best-effort.
-- Split local portability tests from hard isolation tests that run only on Linux or in
-  containers.
-- Before any real scale-up, require the hard isolation test suite to pass in the target
-  deployment environment.
-
-**Resolved by Goal 15.** `src/siro/backends.py` now factors guarded execution into a backend
-abstraction. The portable `local` backend is documented as the **developer fallback** — it
-still samples via `ps`, but now sums the whole **process group's** RSS and process count, so a
-forked child can no longer dodge the ceiling. The `linux_guarded` backend lets the Linux cgroup
-v2 kernel enforce `memory.max` (OOM-kill on breach), `pids.max`, and peak accounting; its
-hard-isolation tests skip cleanly when the backend is unavailable (e.g. on macOS). A `compute`
-backend policy (`hard_backend_above_tier`, `allow_local_dev`) refuses to run governed tiers on
-the portable monitor unless local development is explicitly opted in. The portable backend is a
-developer convenience, **not** the production isolation story.
-
-### JSONL is right for MVP, not enough for production
-
-Append-only JSONL is excellent for readability and early auditability. It is not enough
-for multi-worker operation, concurrent writes, querying, access control, retention, or
-tamper evidence.
-
-Refinement:
-
-- Keep JSONL export as the human-readable interchange format.
-- Add SQLite for local multi-run development.
-- Add Postgres for production coordination and reporting.
-- Add schema migrations and validation on read.
-- Add run IDs, cycle IDs, lineage IDs, and idempotency keys everywhere.
-- Add hash chaining or signed records for governance and artifact ledgers.
-
-**Resolved by Goal 16 (SQLite slice).** `src/siro/storage.py` adds a storage interface over
-every append-only stream with two backends: JSONL stays the default human-readable format, and
-an opt-in SQLite backend adds schema migrations (validated on read via the typed models),
-idempotency keys (repeated writes dedupe), and hash chaining for the governance and artifact
-streams, with byte-compatible JSONL export/import (`storage-migrate`/`-import`/`-export`/
-`-verify`; summaries read either backend). A stable `call_id` was added to `ModelCall` (the one
-record lacking an id); attempt/cycle/lineage IDs already existed. Postgres for production
-coordination remains future work, but the interface is backend-agnostic so it slots in without
-touching call sites.
-
-### The benchmark suite is still too small
-
-The seeded research suite proves the lifecycle across algorithm, training, and policy
-tasks. It does not yet prove that meta-research or frontier-model orchestration is
-reliably improving research output.
-
-Refinement:
-
-- Expand each family from one task to many small tasks.
-- Add adversarial evaluator-loophole tasks.
-- Add noisy metrics that require repeated measurement.
-- Add tasks with intentionally misleading visible tests.
-- Add tasks where a correct change improves the primary metric but regresses a secondary
-  metric.
-- Add benchmark holdout splits that are never included in prompts or memory summaries.
-
-### The provider layer needs production behavior
-
-The stdlib HTTP provider layer is good for auditability and offline testability. Before
-production, it needs more operational behavior.
-
-Refinement:
-
-- Add retry policy with bounded exponential backoff.
-- Classify provider errors into retryable, budget, auth, rate-limit, and policy failures.
-- Add provider-specific request IDs to the audit ledger.
-- Add per-role concurrency limits.
-- Add spend dashboards by provider, model, role, task family, and promotion outcome.
-- Add key rotation and explicit secret-source documentation.
-
-### Human governance needs stronger identity
-
-The governance gate is structurally good: default-deny, human verbs only, exact-change
-hash binding, expiry, revocation, and single-use approvals. For production, the identity
-model needs to become stronger than a free-form `--by` string.
-
-Refinement:
-
-- Require authenticated operator identity.
-- Sign approvals and revocations.
-- Separate requesters, reviewers, and approvers.
-- Add two-person approval for high-risk actions.
-- Add policy templates for each governed action type.
-- Export governance packets for external review.
-
-## Recommended next milestones
-
-The refinement areas above are now captured as staged goal prompts:
-
-| Refinement area | Goal prompt |
-|---|---|
-| Documentation drift and docs privacy | `docs/goal_prompts/goal_13_docs_consistency_contract.md` |
-| Pricing defaults and budget calibration | `docs/goal_prompts/goal_14_pricing_audit_and_budget_calibration.md` |
-| Hard resource isolation for scale-up | `docs/goal_prompts/goal_15_hard_resource_isolation.md` |
-| Durable queryable storage | `docs/goal_prompts/goal_16_durable_research_store.md` |
-| Benchmark-suite expansion | `docs/goal_prompts/goal_17_benchmark_suite_expansion.md` |
-| Provider operations and observability | `docs/goal_prompts/goal_18_provider_operations_and_observability.md` |
-| Governance identity and policy hardening | `docs/goal_prompts/goal_19_governance_identity_and_policy.md` |
-| Bounded operational pilot | `docs/goal_prompts/goal_20_operational_pilot_report.md` |
-
-### Milestone A - Hardening pass
-
-Goal: make the implemented Goals 01-12 internally consistent and locally green.
+Goal: make the current 01-27 implementation internally consistent and locally green.
 
 Work:
 
-- Fix README implementation-status drift.
-- Refresh pricing defaults or add config-level price overrides.
-- Fix or re-scope the macOS memory-breach test.
-- Add a pricing audit command or documented pricing review procedure.
-- Run and record the full test suite.
+- Run `mise run check-docs`, `mise run lint`, and `mise run test`.
+- Run focused external/life-science tests before any changes to Goals 26-27.
+- Confirm README, implementation status, and document map all agree.
+- Keep all docs project-relative and privacy-clean.
 
 Exit criteria:
 
-- Full local test suite passes or has a clearly documented platform-specific exception.
-- README and docs agree on goal status.
-- Budget estimates are clearly dated and source-backed.
+- Full tests pass, or any platform-specific skip/failure is recorded with scope and reason.
+- Goal manifest and README both state Goals 01-27 as implemented.
+- No accidental personal-machine paths appear in docs.
 
-### Milestone B - Benchmark expansion
+### Milestone B - benchmark and pilot evidence
 
-Goal: make the research suite large enough to detect real improvements and regressions.
+Goal: answer whether models and meta-research improve objective outcomes.
 
 Work:
 
-- Add 10-20 tasks per research family.
-- Add hidden/adversarial tasks.
-- Add repeated-run noise handling.
-- Add benchmark summary reports that separate accepted, mixed, and failed results.
+- Run the fixed Goal 20 pilot arms.
+- Preserve `research_attempts.jsonl`, `model_calls.jsonl`, config snapshots, and report output.
+- Report accepted, mixed, failed, hidden-test, reproducibility, and safety outcomes separately.
+- Compare local, cheap frontier, and strong frontier arms by cost per objective promotion.
 
 Exit criteria:
 
-- `siro summarize-research` is meaningful across families.
-- Meta-change A/B tests have enough cases to avoid one-task overfitting.
+- `runs/pilots/operational-pilot-v1/pilot_report.md` has enough evidence for a continue,
+  revise, or stop decision.
 
-### Milestone C - Production sandbox prototype
+### Milestone C - production isolation rehearsal
 
-Goal: validate hard resource and network isolation in the target deployment environment.
+Goal: prove the deployment substrate enforces the invariants the code assumes.
 
 Work:
 
-- Add a Linux/container sandbox backend.
-- Enforce memory with cgroups.
-- Block execution-plane network with container/firewall policy.
-- Preserve the current local sandbox as the developer fallback.
+- Run the hard-isolation tests in the target Linux/container environment.
+- Verify execution-plane no-network policy outside Python.
+- Confirm secrets are absent from candidate environments.
+- Test wall-clock, memory, process-count, and filesystem breach recording.
 
 Exit criteria:
 
-- Hard isolation tests pass in CI or a documented Linux runner.
-- Memory and wall-clock breaches are reliably recorded as negative attempts.
+- Hard isolation passes in the target runner.
+- A failed breach is archived as a negative attempt with a clear reason.
 
-### Milestone D - Operational pilot
+### Milestone D - life-science dry run without wet lab
 
-Goal: run a bounded Tier 1 pilot with actual spend tracking.
+Goal: exercise the full Goal 27 workflow up to, but not including, a real assay.
 
 Work:
 
-- Run 50-100 frontier cycles against the expanded suite.
-- Keep strict per-run and per-day budget ceilings.
-- Compare local-model, cheaper frontier-model, and strongest frontier-model performance.
-- Report cost per passing attempt, cost per promotion, safety escalation rate, and
-  benchmark-family win rate.
+- Run the offline screening task with `config/tier0.life_science.yaml`.
+- Confirm non-drug-like or unsynthesizable candidates fail before affinity is considered.
+- Generate a confirmation proposal only for a screen-clearing candidate.
+- Leave the proposal pending; do not approve or ingest fabricated real-world data.
 
 Exit criteria:
 
-- The project can answer whether frontier spend buys measurable improvement over local
-  Tier 0 for this benchmark suite.
+- Screening evidence is attached to the pending approval.
+- An unscreened candidate cannot create a confirmation request.
+- The confirmation adapter reports "awaiting" until a signed result is ingested.
 
-## Bottom line
+### Milestone E - governed wet-lab integration pilot
 
-The project is strongest as a bounded research testbed. The architecture is credible
-because it centers objective evaluation, auditability, and explicit governance. The next
-step is not broader autonomy; it is harder measurement: more benchmarks, stronger
-resource isolation, current pricing, and production-quality operational records.
+Goal: connect `siro` to a qualified external assay process without letting `siro` run the lab.
+
+Work:
+
+- Define a laboratory result schema, operator identity process, and result-signing procedure.
+- Map sample IDs, plate IDs, instrument run IDs, and assay batch IDs into the external result
+  provenance.
+- Run a mock integration with a lab-owned LIMS/ELN or instrument export file.
+- Have a human approve one low-risk confirmation proposal.
+- Ingest the signed result and verify hash binding, approval status, and audit packet export.
+
+Exit criteria:
+
+- `siro` never receives lab credentials or instrument control.
+- A revoked, expired, unsigned, mismatched, or null result refuses promotion and is logged.
+- A signed approved result resolves only for the exact candidate and proposal.
+
+## Bottom Line
+
+`siro` is now a coherent bounded research substrate with a credible path from local
+experiments to governed external science. The project has implemented the right control
+surfaces: plane isolation, objective gates, budget ceilings, provider abstraction, durable
+records, governance, domain packs, statistical promotion, and external-oracle ingestion.
+
+The next step is not broader autonomy. It is harder evidence: run the pilot, prove the target
+isolation backend, expand benchmarks, and treat any wet-lab integration as a governed,
+human-owned external oracle with validated assays and signed results.
