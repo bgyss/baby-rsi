@@ -149,3 +149,4 @@ Goals 01-21 are implemented. Keep this section grouped by tier; put detailed not
 | [`docs/15_scale_cost_model.md`](docs/15_scale_cost_model.md) | Cost model and scale bands. |
 | [`docs/16_low_cost_validation_plan.md`](docs/16_low_cost_validation_plan.md) | Validation ladder. |
 | [`docs/17_operational_pilot_plan.md`](docs/17_operational_pilot_plan.md) | Pilot plan and report contract. |
+| [`docs/18_generalizing_to_sciences.md`](docs/18_generalizing_to_sciences.md) | Design exploration: generalizing the loop to math, chip, physics, and life sciences. |
