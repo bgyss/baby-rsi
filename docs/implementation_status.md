@@ -20,7 +20,7 @@ lifecycle, gates, evaluator contracts, and memory model; tier changes happen by 
 |---|---|---|
 | 07 — Provider abstraction | `providers/`, `config`, `budget` | One `ModelClient` over local llama.cpp/LlamaBarn, OpenAI, and Anthropic backends; role binding by config; per-run/per-day USD and token ceilings; calls logged to `runs/model_calls.jsonl`. |
 | 08 — Frontier research org | `orchestrator`, `agents/`, `tools` | Full role chain from hypothesis through memory update, using typed role outputs and control-plane-only tools. Tier >= 1 requires Safety/Evaluation review on a different provider than Implementation. |
-| 09 — Research-shaped task suite | `research`, `tasks/research/` | Algorithm, training, and policy task families with `brief.md`, baseline edit surface, controller-owned `eval.py`, optional hidden data, reproducibility checks, and archive summaries. Hidden data stays outside candidate cwd via `SIRO_HIDDEN_PATH`. |
+| 09 — Research-shaped task suite | `research`, `packs/ml/tasks/` | Algorithm, training, and policy task families with `brief.md`, baseline edit surface, controller-owned `eval.py`, optional hidden data, reproducibility checks, and archive summaries. Hidden data stays outside candidate cwd via `SIRO_HIDDEN_PATH`. |
 
 ## Tier 2 — Governed Scale-Up
 
@@ -38,7 +38,7 @@ lifecycle, gates, evaluator contracts, and memory model; tier changes happen by 
 | 14 — Pricing audit and budget calibration | `providers/pricing`, `config`, CLI | Dated model price overrides, pricing metadata in ledgers, strict stale/missing-price checks, and representative cycle-cost reporting. |
 | 15 — Hard resource isolation backend | `backends`, `sandbox.run_guarded`, `scale` | Sandbox backend abstraction; portable process-group ceilings; optional Linux cgroup v2 `linux_guarded` backend; backend policy in config. |
 | 16 — Durable research store and query layer | `storage`, `schemas`, CLI | JSONL remains default. SQLite adds migrations, idempotency keys, hash-chained governance/artifact records, and JSONL import/export. |
-| 17 — Research benchmark suite expansion | `tasks/research/`, `research` | At least 10 tasks each for algorithm, training, and policy work; added data-cleaning and parser/validator families; adversarial variants; richer summaries. |
+| 17 — Research benchmark suite expansion | `packs/ml/tasks/`, `research` | At least 10 tasks each for algorithm, training, and policy work; added data-cleaning and parser/validator families; adversarial variants; richer summaries. |
 | 18 — Provider operations and observability | `providers/ops`, `providers/_http`, CLI | Classified provider errors, bounded retries, request metadata, provider ops config, failed-call records, and `provider-report`. |
 | 19 — Governance identity and policy hardening | `governance`, `schemas`, CLI | Operators, signatures, policy templates, two-person approval, requester/approver separation, packet export, and ledger verification. Legacy Goal 10 records stay readable. |
 | 20 — Bounded operational pilot and cost-per-promotion report | `pilot`, `docs/17_operational_pilot_plan.md`, CLI | Fixed Tier 0 vs frontier pilot, budget caps, command transcript, archived evidence, cost-per-promotion report, and continue/revise/stop recommendation. |
@@ -48,3 +48,9 @@ lifecycle, gates, evaluator contracts, and memory model; tier changes happen by 
 | Goal | Modules | Status |
 |---|---|---|
 | 21 — Conversational operating interface in Claude Code and Codex | `.claude/skills/`, `.codex/skills/`, `docs/operating_guide.md`, `src/siro/cli.py` | Host-specific repo-local skills operate the existing CLI. No REPL. Global `--json` supports precise read-only summaries; global `--dry-run` previews command, tier, and governance implications without side effects. | <!-- docs-privacy-allow -->
+
+## Generalization to the Sciences
+
+| Goal | Modules | Status |
+|---|---|---|
+| 22 — Domain-pack interface and evaluator adapter | `packs`, `research`, `config`, `orchestrator`, `packs/ml/` | Typed `EvaluatorAdapter` and pack loader; config-selected `pack: ml`; existing research families reseated under `packs/ml/tasks/`; per-pack tool whitelists can only narrow the global control-plane toolset. |

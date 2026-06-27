@@ -22,7 +22,7 @@ why) — never a model-judgment claim. Auto-commit any resulting change with `jj
 | Run a research eval under a governed compute budget | `uv run siro run-scaled <task_dir> --compute-tier N` |
 
 Task dirs live under `tasks/code_improver/`, `tasks/training/`, and
-`tasks/research/<family>/<task>/`. If unsure which tasks exist, list those directories.
+`packs/ml/tasks/<family>/<task>/`. If unsure which tasks exist, list those directories.
 
 ## Propose before you act (use `--dry-run`)
 

@@ -58,6 +58,7 @@ from .evaluator import evaluate
 from .gates import function_signatures, promotion_gate, static_gates
 from .memory import ResearchMemory, entry_from_attempt
 from .meta import forbidden_meta_change
+from .packs import DEFAULT_PACK_ID, DomainPack, load_pack
 from .providers.base import extract_code
 from .research import (
     ResearchArchive,
@@ -170,7 +171,7 @@ class CycleResult:
 class ResearchCycleResult:
     """The full, auditable trace of one research-shaped cycle (Goal 09).
 
-    The analogue of :class:`CycleResult` for a ``tasks/research/`` task: the org ran the
+    The analogue of :class:`CycleResult` for a ``packs/ml/tasks/`` task: the org ran the
     full lifecycle and the task's own ``eval.py`` (not a model) decided promotion. Carries
     the typed :class:`MetricRecord` and the task ``family`` so the suite summary can report
     per family.
@@ -215,6 +216,7 @@ class Orchestrator:
         transport: "Transport | None" = None,
         retrieval_limit: int = 5,
         research_archive: ResearchArchive | None = None,
+        pack: DomainPack | None = None,
     ) -> None:
         # Use `is None` (not `or`): JSONLArchive/ResearchMemory are falsy when empty.
         self._agents = agents
@@ -232,6 +234,7 @@ class Orchestrator:
         self.retrieval_limit = retrieval_limit
         self._config = config
         self._transport = transport
+        self.pack = pack or load_pack(getattr(config, "pack", DEFAULT_PACK_ID))
 
     # --- construction from config ------------------------------------------
     @classmethod
@@ -268,7 +271,13 @@ class Orchestrator:
             config=config,
             transport=transport,
             research_archive=research_archive,
+            pack=load_pack(config.pack),
         )
+        if config.tier < orch.pack.manifest.tier_floor:
+            raise ValueError(
+                f"Pack {orch.pack.id!r} requires tier >= {orch.pack.manifest.tier_floor}, "
+                f"but config selects tier {config.tier}."
+            )
         orch._assert_cross_model_config(config)
         return orch
 
@@ -545,7 +554,9 @@ class Orchestrator:
                 memory=self.memory,
                 task_id=task.task_id,
                 allowed_surfaces=[task.allowed_surface],
-                references_path=self.references_path,
+                references_path=self._pack_references_path(),
+                allowed_tool_names=self.pack.tools,
+                prompts_dir=self.pack.prompts_dir,
                 transport=self._transport,
             )
         if self._agents is None:
@@ -561,7 +572,7 @@ class Orchestrator:
         The held-out data in ``hidden/`` reaches only ``eval.py``, never a prompt, and the
         static safety gate's no-file-I/O rule means a candidate cannot read it to leak it.
         """
-        task = load_research_task(task_dir)
+        task = load_research_task(task_dir, pack=self.pack)
         agents = self._agents_for_research_task(task)
         cross_model = agents[SAFETY].provider != agents[IMPLEMENTATION].provider
         if self.require_cross_model and not cross_model:
@@ -698,6 +709,8 @@ class Orchestrator:
             status=status,
             reason=reason,
             gates=report,
+            pack_id=task.pack_id,
+            pack_version=task.pack_version,
         )
         self.research_archive.append(attempt)
 
@@ -874,9 +887,14 @@ class Orchestrator:
 
     def _references_text(self) -> str:
         try:
-            return Path(self.references_path).read_text(encoding="utf-8")[:2000]
+            return Path(self._pack_references_path()).read_text(encoding="utf-8")[:2000]
         except OSError:
             return "(reference set unavailable)"
+
+    def _pack_references_path(self) -> Path:
+        if self.pack.references_dir is not None:
+            return self.pack.references_dir / "references.md"
+        return Path(self.references_path)
 
     def _bottlenecks(self, task_id: str) -> str:
         modes = self.memory.top_failure_modes(limit=3, task_id=task_id)

@@ -23,11 +23,11 @@ DEFAULT_PILOT_PLAN_PATH = DEFAULT_PILOT_ROOT / "pilot_plan.json"
 DEFAULT_PILOT_REPORT_PATH = DEFAULT_PILOT_ROOT / "pilot_report.md"
 
 DEFAULT_PILOT_TASKS = [
-    "tasks/research/algorithm/pair_count",
-    "tasks/research/training/tiny_mlp",
-    "tasks/research/policy/sentiment_rules",
-    "tasks/research/data_cleaning/normalize_emails",
-    "tasks/research/parser_validator/slug_validator",
+    "packs/ml/tasks/algorithm/pair_count",
+    "packs/ml/tasks/training/tiny_mlp",
+    "packs/ml/tasks/policy/sentiment_rules",
+    "packs/ml/tasks/data_cleaning/normalize_emails",
+    "packs/ml/tasks/parser_validator/slug_validator",
 ]
 
 

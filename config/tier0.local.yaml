@@ -1,6 +1,7 @@
 # Tier 0 — fully local / offline. The default config.
 # Selecting or lowering a tier is config-only, never a code change.
 tier: 0
+pack: ml
 
 providers:
   local:

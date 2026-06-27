@@ -21,6 +21,7 @@ from typing import Any
 import yaml
 
 from .budget import BudgetLimits
+from .packs import DEFAULT_PACK_ID
 from .providers import ModelClient, ProviderConfig, build_client
 from .providers._http import Transport
 
@@ -41,6 +42,7 @@ class SiroConfig:
     agent_models: dict[str, str]
     budget: BudgetLimits
     allowed_endpoints: list[str] | None
+    pack: str = DEFAULT_PACK_ID
     path: Path | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -98,6 +100,7 @@ def load_config(path: str | Path | None = None) -> SiroConfig:
         agent_models=agent_models,
         budget=BudgetLimits.from_config(raw.get("budget")),
         allowed_endpoints=allowed_endpoints,
+        pack=str(raw.get("pack", DEFAULT_PACK_ID)),
         path=config_path,
         raw=raw,
     )

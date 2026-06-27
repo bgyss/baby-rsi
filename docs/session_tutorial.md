@@ -55,14 +55,14 @@ Next best action: inspect the policy reproducibility failure or run one policy c
 Preview:
 
 ```zsh
-uv run siro --dry-run run-research tasks/research/algorithm/pair_count \
+uv run siro --dry-run run-research packs/ml/tasks/algorithm/pair_count \
     --config config/tier0.local.yaml
 ```
 
 Expected preview:
 
 ```text
-Command: run-research tasks/research/algorithm/pair_count
+Command: run-research packs/ml/tasks/algorithm/pair_count
 Tier: 0
 Effects: writes a research attempt archive row
 Governance: none
@@ -71,7 +71,7 @@ Governance: none
 Run after confirmation:
 
 ```zsh
-uv run siro run-research tasks/research/algorithm/pair_count \
+uv run siro run-research packs/ml/tasks/algorithm/pair_count \
     --config config/tier0.local.yaml
 ```
 
@@ -91,7 +91,7 @@ Archive: row written to runs/research_attempts.jsonl.
 Preview:
 
 ```zsh
-uv run siro --dry-run run-scaled tasks/research/algorithm/pair_count --compute-tier 1
+uv run siro --dry-run run-scaled packs/ml/tasks/algorithm/pair_count --compute-tier 1
 ```
 
 If approval is missing, request it:
@@ -112,7 +112,7 @@ uv run siro approve <request_id> --by <operator_id>
 Run after approval:
 
 ```zsh
-uv run siro run-scaled tasks/research/algorithm/pair_count --compute-tier 1
+uv run siro run-scaled packs/ml/tasks/algorithm/pair_count --compute-tier 1
 ```
 
 Expected report:

@@ -7,7 +7,7 @@ frontier agents are measured doing genuine research rather than templated mutati
 the validate step of the self-improvement loop depends on** (``docs/13``): the held-fixed
 A/B set both loops compare candidates and meta-changes against.
 
-A research task lives in ``tasks/research/<task>/``::
+A research task lives in ``packs/<domain>/tasks/<family>/<task>/``::
 
     task.json   # machine metadata: family, edit surface, primary metric + direction
     brief.md    # objective, constraints, allowed edit surface, success metric (agent-visible)
@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Iterator
 
 from .memory import failure_signature
+from .packs import DEFAULT_PACK_ID, DomainPack, EvaluatorAdapter, EvaluatorRegime, load_pack
 from .sandbox import Sandbox
 from .schemas import (
     AttemptStatus,
@@ -57,7 +58,7 @@ from .schemas import (
 )
 
 DEFAULT_RESEARCH_ATTEMPTS_PATH = Path("runs/research_attempts.jsonl")
-DEFAULT_RESEARCH_TASKS_DIR = Path("tasks/research")
+DEFAULT_RESEARCH_TASKS_DIR = Path("packs/ml/tasks")
 
 #: A candidate must beat the incumbent's primary metric by at least this (oriented so
 #: larger is better) to count as an improvement — a guard against promoting on noise.
@@ -97,6 +98,10 @@ class ResearchTask:
     primary_name: str
     higher_is_better: bool
     budget_seconds: float
+    pack_id: str = DEFAULT_PACK_ID
+    pack_version: str = ""
+    evaluator_regime: EvaluatorRegime = EvaluatorRegime.SEEDED_DETERMINISTIC
+    evaluator_adapter: EvaluatorAdapter | None = None
 
     @property
     def allowed_surface(self) -> str:
@@ -104,9 +109,19 @@ class ResearchTask:
         return str(Path(self.path) / "baseline" / self.edit_surface)
 
 
-def load_research_task(task_dir: str | Path) -> ResearchTask:
+def _find_pack_for_task(path: Path) -> DomainPack:
+    parts = path.resolve().parts
+    if "packs" in parts:
+        idx = len(parts) - 1 - parts[::-1].index("packs")
+        if idx + 1 < len(parts):
+            return load_pack(parts[idx + 1])
+    return load_pack(DEFAULT_PACK_ID)
+
+
+def load_research_task(task_dir: str | Path, *, pack: DomainPack | None = None) -> ResearchTask:
     """Load a research task directory (``task.json`` + ``brief.md`` + ``baseline/`` + ``eval.py``)."""
     path = Path(task_dir)
+    pack = pack or _find_pack_for_task(path)
     meta_path = path / "task.json"
     brief_path = path / "brief.md"
     eval_path = path / "eval.py"
@@ -141,17 +156,24 @@ def load_research_task(task_dir: str | Path) -> ResearchTask:
         primary_name=meta.get("primary_metric", "primary"),
         higher_is_better=bool(meta.get("higher_is_better", True)),
         budget_seconds=float(meta.get("budget_seconds", DEFAULT_RESEARCH_BUDGET_SECONDS)),
+        pack_id=pack.id,
+        pack_version=pack.version,
+        evaluator_regime=pack.regime,
+        evaluator_adapter=pack.adapter,
     )
 
 
-def discover_research_tasks(root: str | Path = DEFAULT_RESEARCH_TASKS_DIR) -> list[ResearchTask]:
+def discover_research_tasks(
+    root: str | Path | None = DEFAULT_RESEARCH_TASKS_DIR, *, pack_id: str | None = None
+) -> list[ResearchTask]:
     """Load every research task under ``root`` (a directory with a ``task.json``)."""
-    base = Path(root)
+    pack = load_pack(pack_id or DEFAULT_PACK_ID)
+    base = pack.tasks_dir if root is None else Path(root)
     if not base.is_dir():
         return []
     tasks: list[ResearchTask] = []
     for meta in sorted(base.rglob("task.json")):
-        tasks.append(load_research_task(meta.parent))
+        tasks.append(load_research_task(meta.parent, pack=pack))
     return tasks
 
 
@@ -179,7 +201,7 @@ def hidden_payload(task: ResearchTask) -> str | None:
 # --------------------------------------------------------------------------- #
 
 
-def run_research_eval(task: ResearchTask, candidate_code: str, sandbox: Sandbox) -> MetricRecord:
+def _run_eval_py(task: ResearchTask, candidate_code: str, sandbox: Sandbox) -> MetricRecord:
     """Run the task's fixed ``eval.py`` against ``candidate_code`` and return its metric.
 
     The candidate supplies only its edited edit surface; ``eval.py`` (controller-owned) and
@@ -214,6 +236,14 @@ def run_research_eval(task: ResearchTask, candidate_code: str, sandbox: Sandbox)
     )
 
 
+def run_research_eval(task: ResearchTask, candidate_code: str, sandbox: Sandbox) -> MetricRecord:
+    """Score a candidate through the task's pack-declared evaluator adapter."""
+    adapter = task.evaluator_adapter
+    if adapter is None:
+        adapter = load_pack(task.pack_id).adapter
+    return adapter.evaluate(task, candidate_code, sandbox)
+
+
 def research_improves(candidate: MetricRecord, baseline: MetricRecord) -> tuple[bool, str]:
     """Whether ``candidate`` is an objective improvement over ``baseline`` (deterministic).
 
@@ -245,6 +275,13 @@ def research_reproducibility_gate(
     reruns before promotion"). The seeded benchmarks are deterministic, so honest reruns
     agree exactly.
     """
+    if task.evaluator_regime is EvaluatorRegime.STATISTICAL:
+        return GateResult(
+            gate="research_reproducibility",
+            decision=GateDecision.FAILED,
+            risk_level="high",
+            findings=["statistical evaluator regime is declared but unsupported until Goal 24"],
+        )
     runs = max(runs, 2)
     metrics = [run_research_eval(task, candidate_code, sandbox) for _ in range(runs)]
     if not all(m.passed and m.reproducible for m in metrics):
@@ -336,6 +373,8 @@ def entry_from_research_attempt(attempt: ResearchAttempt) -> MemoryEntry:
         experiment_id=attempt.attempt_id,
         source_experiment_id=attempt.candidate.parent_id or "",
         task_id=attempt.task_id,
+        pack_id=attempt.pack_id,
+        pack_version=attempt.pack_version,
         candidate_summary=_candidate_summary(attempt.candidate.code),
         score=score,
         failure_mode=signature,

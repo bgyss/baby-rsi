@@ -91,7 +91,6 @@ from .providers import ModelClient
 from .providers.pricing import Pricing
 from .research import (
     DEFAULT_RESEARCH_ATTEMPTS_PATH,
-    DEFAULT_RESEARCH_TASKS_DIR,
     ResearchArchive,
     discover_research_tasks,
     load_research_task,
@@ -397,7 +396,7 @@ def _cmd_run_research(args: argparse.Namespace) -> int:
     """Run the full org on research-shaped task(s) (Goal 09).
 
     With a ``task_dir`` it runs one cycle on that task; with none it runs one cycle on every
-    task discovered under ``tasks/research/`` — so "the Tier 1 org runs a full lifecycle on
+    task discovered under the configured pack's tasks/ directory — so "the Tier 1 org runs a full lifecycle on
     each task family" is one command. Promotion is decided by each task's own ``eval.py``
     (the objective evaluator), not by any model. Lowering the tier is config-only.
     """
@@ -414,9 +413,10 @@ def _cmd_run_research(args: argparse.Namespace) -> int:
     if args.task_dir is not None:
         tasks = [args.task_dir]
     else:
-        discovered = discover_research_tasks(args.tasks_root)
+        discovered = discover_research_tasks(args.tasks_root, pack_id=config.pack)
         if not discovered:
-            print(f"No research tasks found under {args.tasks_root}.")
+            root_label = args.tasks_root or f"pack {config.pack!r}"
+            print(f"No research tasks found under {root_label}.")
             return 0
         tasks = [Path(t.path) for t in discovered]
 
@@ -1491,7 +1491,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         nargs="?",
         default=None,
-        help="A research task dir. Omit to run one cycle on every task under tasks/research/.",
+        help="A research task dir. Omit to run one cycle on every task in the configured pack.",
     )
     p_research.add_argument(
         "--objective",
@@ -1508,8 +1508,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_research.add_argument(
         "--tasks-root",
         type=Path,
-        default=DEFAULT_RESEARCH_TASKS_DIR,
-        help=f"Root to discover research tasks (default: {DEFAULT_RESEARCH_TASKS_DIR}).",
+        default=None,
+        help="Root to discover research tasks (default: the configured pack's tasks/ directory).",
     )
     p_research.add_argument(
         "--archive",
@@ -1687,8 +1687,8 @@ def build_parser() -> argparse.ArgumentParser:
         "task_dir",
         type=Path,
         nargs="?",
-        default=Path("tasks/research/training/tiny_mlp"),
-        help="Research task dir (default: tasks/research/training/tiny_mlp).",
+        default=Path("packs/ml/tasks/training/tiny_mlp"),
+        help="Research task dir (default: packs/ml/tasks/training/tiny_mlp).",
     )
     p_scaled.add_argument(
         "--compute-tier", type=int, default=0, help="Compute tier (0 = free; higher = governed)."

@@ -60,7 +60,7 @@ uv run siro run-org tasks/code_improver/task_001 --objective "Make sum_list simp
 
 # Goal 09: research suite
 uv run siro run-research
-uv run siro run-research tasks/research/training/tiny_mlp --config config/tier0.local.yaml
+uv run siro run-research packs/ml/tasks/training/tiny_mlp --config config/tier0.local.yaml
 ```
 
 Use `--config config/tier1.frontier.yaml` for frontier roles. Use
@@ -78,8 +78,8 @@ application remains human-gated.
 ## Governed Scale-Up
 
 ```zsh
-uv run siro --dry-run run-scaled tasks/research/training/tiny_mlp --compute-tier 1
-uv run siro run-scaled tasks/research/training/tiny_mlp --compute-tier 1
+uv run siro --dry-run run-scaled packs/ml/tasks/training/tiny_mlp --compute-tier 1
+uv run siro run-scaled packs/ml/tasks/training/tiny_mlp --compute-tier 1
 uv run siro sandbox-backends
 uv run siro run-scaled --compute-tier 1 --backend linux_guarded
 ```

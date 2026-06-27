@@ -27,7 +27,7 @@ from siro.scale import (
 )
 from siro.schemas import ApprovalScope, GovernedAction
 
-TINY_MLP = "tasks/research/training/tiny_mlp"
+TINY_MLP = "packs/ml/tasks/training/tiny_mlp"
 GOOD_CONFIG = "CONFIG = {'learning_rate': 0.2, 'epochs': 40, 'hidden_size': 8, 'batch_size': 16, 'seed': 0}\n"
 
 

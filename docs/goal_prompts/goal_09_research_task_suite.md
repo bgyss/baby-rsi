@@ -8,7 +8,7 @@ Depends on Goal 08.
 
 ## Requirements
 
-Create `tasks/research/` task directories, each with:
+Create `packs/ml/tasks/` task directories, each with:
 
 ```text
 brief.md          # objective, constraints, allowed edit surfaces, success metric

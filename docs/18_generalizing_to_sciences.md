@@ -1,11 +1,11 @@
 # Generalizing the Framework to the Sciences
 
-This is a **design exploration**, not a built contract. It proposes how `siro` — today
+This is a design exploration with the first packaging step now built. It proposes how `siro` — today
 exercised on ML/software self-improvement — generalizes into a domain-agnostic research
 organization that can run the same bounded, auditable loop over mathematics, chip design,
 the physical sciences, drug discovery, and the life sciences. It motivates a small set of
-future goal prompts (sketched in [Staging](#staging)); nothing here changes what is
-implemented until those goals land.
+future goal prompts (sketched in [Staging](#staging)); the Goal 22 domain-pack interface
+has landed, while the non-ML packs and statistical/external regimes remain staged work.
 
 The thesis: **the core loop is already domain-agnostic, and the work is not a rewrite — it
 is hardening four existing seams and generalizing two gates.** The non-negotiable invariants
@@ -24,7 +24,7 @@ execution plane runs candidates offline, [`01`](01_system_architecture.md)) is g
 
 The coupling to ML/software lives in exactly **four swappable seams**:
 
-1. **Seeded task families** — `tasks/research/{algorithm,training,policy,...}/`. These happen
+1. **Seeded task families** — `packs/ml/tasks/{algorithm,training,policy,...}/`. These happen
    to be in-silico Python; nothing requires that.
 2. **The evaluator contract** — each task's `eval.py` prints a JSON `MetricRecord` on its last
    stdout line, run inside the offline sandbox (`Sandbox.run_research`, `siro.research`). This
@@ -82,8 +82,8 @@ mechanism rather than inventing a new one — and the execution plane stays offl
 
 ### 1. A formal domain-pack interface (hardening seams 1–3)
 
-Promote the implicit "`eval.py` prints JSON" convention into a typed, registrable
-**`EvaluatorAdapter`**, and bundle everything domain-specific into a **domain pack**:
+Goal 22 promotes the implicit "`eval.py` prints JSON" convention into a typed, registrable
+**`EvaluatorAdapter`**, and bundles everything domain-specific into a **domain pack**:
 
 ```
 packs/<domain>/
@@ -95,11 +95,12 @@ packs/<domain>/
   tools.allow          # the per-domain control-plane tool whitelist
 ```
 
-The core loop *imports a pack*; it never hardcodes a domain. "Add a science" becomes "ship a
-pack," reviewed as a unit. The adapter declares its regime so the controller knows which
-reproducibility policy (below) to apply. This is the single most leveraged change — it is mostly
-refactoring the seam that already exists. The current ML families become `packs/ml/`, proving
-the interface against known-good behavior before any new science is added.
+The core loop loads a pack by config (`pack: ml` by default); it never hardcodes a domain.
+"Add a science" becomes "ship a pack," reviewed as a unit. The adapter declares its regime so
+the controller knows which reproducibility policy (below) to apply. The current ML families now
+live in `packs/ml/`, proving the interface against known-good behavior before any new science is
+added. A pack's `tools.allow` may narrow the control-plane toolset but cannot grant tools outside
+the global allowlist.
 
 ### 2. Generalize the reproducibility / promotion gate (exact → statistical)
 
@@ -141,8 +142,8 @@ riskiest machinery comes only after the cheapest domain has proven the seam. Eac
 prompt carries its own `## Self-improvement` section, per the [`13`](13_self_improvement_loop.md)
 contract — the outer meta-loop improves *how packs propose and select*, bounded identically.
 
-1. **Domain-pack interface + `EvaluatorAdapter`** — refactor only; reseat the existing ML
-   families as `packs/ml/`. No new science.
+1. **Domain-pack interface + `EvaluatorAdapter`** — implemented in Goal 22; refactor only;
+   reseats the existing ML families as `packs/ml/`. No new science.
 2. **First non-ML pack: mathematics via Lean** — pure Regime A. Validates the whole
    generalization while stressing zero new gates.
 3. **Statistical reproducibility gate** — unlocks Regime B.

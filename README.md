@@ -19,7 +19,7 @@ mise run test
 uv run siro --help
 uv run siro --json summarize-research
 uv run siro --dry-run run-scaled --compute-tier 1
-uv run siro run-research tasks/research/training/tiny_mlp --config config/tier0.local.yaml
+uv run siro run-research packs/ml/tasks/training/tiny_mlp --config config/tier0.local.yaml
 ```
 
 Canonical interface: `uv run siro ...`. `mise` tasks are thin wrappers.
@@ -65,7 +65,7 @@ Tier selection is config-only (`config/tier0.local.yaml`, `config/tier1.frontier
 
 ## Implementation Status
 
-Goals 01-21 are implemented; Goals 22-27 are specified, not yet implemented. Keep this
+Goals 01-22 are implemented; Goals 23-27 are specified, not yet implemented. Keep this
 section grouped by tier; put detailed notes in
 [`docs/implementation_status.md`](docs/implementation_status.md).
 
@@ -90,7 +90,7 @@ section grouped by tier; put detailed notes in
   clients behind one interface, role binding by config, token/USD ceilings, call ledger.
 - **Goal 08 — Frontier research org** (orchestrator, agents, tools): model-backed roles,
   control-plane-only tools, cross-model safety review, config-only Tier 1 to Tier 0 fallback.
-- **Goal 09 — Research-shaped task suite** (research, tasks/research): algorithm, training,
+- **Goal 09 — Research-shaped task suite** (research, packs/ml/tasks): algorithm, training,
   and policy task families with controller-owned evaluators and hidden-data isolation.
 
 ### Tier 2 — Governed Scale-Up (Goals 10-12)
@@ -112,7 +112,7 @@ section grouped by tier; put detailed notes in
   optional Linux cgroup v2 enforcement.
 - **Goal 16 — Durable research store and query layer** (storage): JSONL default plus opt-in
   SQLite with migrations, dedupe, hash chains, import, and export.
-- **Goal 17 — Research benchmark suite expansion** (tasks/research): broader fixed suite,
+- **Goal 17 — Research benchmark suite expansion** (packs/ml/tasks): broader fixed suite,
   adversarial variants, hidden data, and richer summaries.
 - **Goal 18 — Provider operations and observability** (providers/ops): classified errors,
   bounded retries, request metadata, and `provider-report`.
@@ -128,14 +128,16 @@ section grouped by tier; put detailed notes in
   repo-local skills drive the non-interactive CLI; global `--json` and `--dry-run` support
   precise summaries and previews without side effects.
 
-### Generalization to the Sciences (Goals 22-27 — specified, not yet implemented)
+### Generalization to the Sciences (Goal 22)
 
 See [`docs/18_generalizing_to_sciences.md`](docs/18_generalizing_to_sciences.md) for the
 evaluator-regime taxonomy and design rationale behind these goals.
 
 - **Goal 22 — Domain-pack interface and evaluator adapter** (packs, packs/ml): formalizes the
   task/evaluator convention into a typed `EvaluatorAdapter` plus a config-selected domain-pack
-  layout; reseats the ML families as `packs/ml/`. Refactor only — no new domain.
+  layout; `packs/ml/` is the built-in default pack and preserves existing ML research behavior.
+
+### Generalization to the Sciences (Goals 23-27 — specified, not yet implemented)
 - **Goal 23 — Mathematics proof-search pack (Lean)** (packs/math): first non-ML pack — a
   Regime-A domain scored by an offline Lean proof checker, theorem statement read-only to agents.
 - **Goal 24 — Statistical reproducibility gate** (research): generalizes the promotion gate to

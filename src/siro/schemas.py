@@ -138,6 +138,8 @@ class MemoryEntry(BaseModel):
     experiment_id: str
     source_experiment_id: str = ""
     task_id: str
+    pack_id: str = ""
+    pack_version: str = ""
     strategy: str = ""
     candidate_summary: str = ""
     score: float = 0.0
@@ -387,6 +389,8 @@ class ResearchAttempt(BaseModel):
     attempt_id: str
     task_id: str
     family: str = ""
+    pack_id: str = "ml"
+    pack_version: str = ""
     candidate: Candidate
     metric: MetricRecord | None = None
     status: AttemptStatus = AttemptStatus.REJECTED

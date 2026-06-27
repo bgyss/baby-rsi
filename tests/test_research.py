@@ -29,9 +29,9 @@ from siro.research import (
 from siro.sandbox import Sandbox
 from siro.schemas import AttemptStatus, GateDecision, MetricRecord, ResearchAttempt
 
-ALGO = "tasks/research/algorithm/pair_count"
-TRAIN = "tasks/research/training/tiny_mlp"
-POLICY = "tasks/research/policy/sentiment_rules"
+ALGO = "packs/ml/tasks/algorithm/pair_count"
+TRAIN = "packs/ml/tasks/training/tiny_mlp"
+POLICY = "packs/ml/tasks/policy/sentiment_rules"
 
 # Known-good candidates per family (objective improvements over each seed).
 ALGO_GOOD = (

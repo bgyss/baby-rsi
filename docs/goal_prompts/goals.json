@@ -112,7 +112,7 @@
       "prompt_path": "docs/goal_prompts/goal_09_research_task_suite.md",
       "artifacts": [
         "src/siro/research.py",
-        "tasks/research/"
+        "packs/ml/tasks/"
       ],
       "summary": "Adds research tasks, objective evaluation harnesses, reproducibility checks, and per-family summaries."
     },
@@ -209,7 +209,7 @@
       "category": "Cross-tier hardening",
       "prompt_path": "docs/goal_prompts/goal_17_benchmark_suite_expansion.md",
       "artifacts": [
-        "tasks/research/",
+        "packs/ml/tasks/",
         "src/siro/research.py"
       ],
       "summary": "Expands the fixed benchmark suite across existing and new families with adversarial variants and richer per-family summaries."
@@ -272,7 +272,7 @@
     {
       "number": 22,
       "title": "Domain-pack interface and evaluator adapter",
-      "status": "specified",
+      "status": "implemented",
       "category": "Generalization to the Sciences",
       "prompt_path": "docs/goal_prompts/goal_22_domain_pack_interface.md",
       "artifacts": [
